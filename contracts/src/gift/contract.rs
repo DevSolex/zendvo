@@ -32,7 +32,6 @@ impl GiftContract {
         admin: Address,
         token_address: Address,
     ) -> Result<(), ContractError> {
-    
         admin.require_auth();
 
         // Guard: panic if already initialized to prevent admin hijacking.

@@ -11,7 +11,8 @@ use crate::gift::contract::{GiftContract, GiftContractClient, MAX_LOCK_DURATION_
 /// Minting is done via `token::StellarAssetClient` which exposes the
 /// admin-only `mint` function — the correct API for soroban-sdk 22.x.
 fn create_token(env: &Env, admin: &Address) -> Address {
-    env.register_stellar_asset_contract_v2(admin.clone()).address()
+    env.register_stellar_asset_contract_v2(admin.clone())
+        .address()
 }
 
 /// Bootstrap a fresh environment with a deployed GiftContract, an admin, a
@@ -141,9 +142,15 @@ fn test_gift_ids_are_sequential() {
     let ledger_now: u64 = f.env.ledger().timestamp();
     let unlock_time = ledger_now + 3600;
 
-    let id1 = f.client.create_gift(&f.sender, &f.recipient, &100_000, &unlock_time);
-    let id2 = f.client.create_gift(&f.sender, &f.recipient, &200_000, &unlock_time);
-    let id3 = f.client.create_gift(&f.sender, &f.recipient, &300_000, &unlock_time);
+    let id1 = f
+        .client
+        .create_gift(&f.sender, &f.recipient, &100_000, &unlock_time);
+    let id2 = f
+        .client
+        .create_gift(&f.sender, &f.recipient, &200_000, &unlock_time);
+    let id3 = f
+        .client
+        .create_gift(&f.sender, &f.recipient, &300_000, &unlock_time);
 
     assert_eq!((id1, id2, id3), (1, 2, 3));
 }
