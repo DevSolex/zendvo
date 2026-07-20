@@ -2,7 +2,7 @@ use soroban_sdk::{contracttype, Address};
 
 /// A time-locked gift record stored on-chain.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Gift {
     /// Address that funded the gift.
     pub sender: Address,

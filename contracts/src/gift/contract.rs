@@ -1,10 +1,12 @@
-use soroban_sdk::{contract, contractimpl, token, Address, Env};
+use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 
-use crate::core::errors::ContractError;
-use crate::gift::{
-    events::emit_gift_created,
-    storage::{get_gift_counter, get_token_address, set_gift, set_gift_counter},
-    types::{DataKey, Gift},
+use crate::{
+    core::errors::ContractError,
+    gift::{
+        events::emit_gift_created,
+        storage::{get_gift_counter, get_token_address, set_gift, set_gift_counter},
+        types::{DataKey, Gift},
+    },
 };
 
 /// Maximum duration a gift's unlock time can be set into the future:
@@ -110,5 +112,32 @@ impl GiftContract {
         emit_gift_created(&env, gift_id, &sender, &recipient, amount, unlock_time);
 
         gift_id
+    }
+
+    /// Upgrades the current contract Wasm for the already initialized backend admin.
+    ///
+    /// The caller must be the admin recorded during initialization, and the
+    /// upgrade must target a Wasm hash that has already been uploaded to the
+    /// ledger via the deployer interface.
+    pub fn upgrade_contract(
+        env: Env,
+        admin: Address,
+        new_wasm_hash: BytesN<32>,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("admin not set");
+
+        if admin != stored_admin {
+            return Err(ContractError::Unauthorized);
+        }
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+
+        Ok(())
     }
 }
