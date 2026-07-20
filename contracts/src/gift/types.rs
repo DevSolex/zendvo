@@ -21,4 +21,12 @@ pub struct Gift {
 pub enum DataKey {
     /// The privileged admin address, set once at initialization.
     Admin,
+    /// The USDC token contract address, set once at initialization.
+    TokenAddress,
+
+    /// Monotonically incrementing counter used to generate gift IDs.
+    GiftCounter,
+
+    /// Persistent record for a specific gift ID.
+    GiftRecord(u64),
 }
