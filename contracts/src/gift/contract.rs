@@ -5,6 +5,7 @@ use crate::gift::{
     storage::{get_gift_counter, get_token_address, set_gift, set_gift_counter},
     types::{DataKey, Gift},
 };
+use crate::core::errors::ContractError;
 
 /// Entry point for the time-locked gift contract.
 #[contract]
@@ -18,16 +19,18 @@ impl GiftContract {
     /// Must be called exactly once immediately after deployment.
     /// Reverts if the admin has already been set, preventing any actor
     /// from overwriting admin rights post-deployment.
-    pub fn initialize(env: Env, admin: Address, token_address: Address) {
+    pub fn initialize(env: Env, admin: Address, token_address: Address) -> Result<(), ContractError> {
         // Guard: panic if already initialized to prevent admin hijacking.
         if env.storage().instance().has(&DataKey::Admin) {
-            panic!("already initialized");
+            return Err(ContractError::AlreadyInitialized);
         }
 
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
             .instance()
             .set(&DataKey::TokenAddress, &token_address);
+            
+        Ok(())
     }
 
     /// Locks USDC from `sender` into the contract as a time-locked gift for
@@ -44,7 +47,7 @@ impl GiftContract {
         recipient: Address,
         amount: i128,
         unlock_time: u64,
-    ) -> u64 {
+    ) -> Result<u64, ContractError> {
         sender.require_auth();
 
         let token_address = get_token_address(&env);
@@ -65,6 +68,6 @@ impl GiftContract {
 
         emit_gift_created(&env, gift_id, &sender, &recipient, amount, unlock_time);
 
-        gift_id
+        Ok(gift_id)
     }
 }
