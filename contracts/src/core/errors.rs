@@ -1,15 +1,29 @@
 use soroban_sdk::contracterror;
 
+/// Common error types used across all contract modules.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum ContractError {
-    AlreadyInitialized = 1,
-    NotInitialized = 2,
-    Unauthorized = 3,
-    GiftNotFound = 4,
-    TimeLockNotExpired = 5,
-    AlreadyClaimed = 6,
-    AmountTooSmall = 7,
-    InsufficientBalance = 8,
+    AlreadyInitialized = 5,
+    NotInitialized = 6,
+    Unauthorized = 7,
+    GiftNotFound = 8,
+    TimeLockNotExpired = 9,
+    AlreadyClaimed = 10,
+    AmountTooSmall = 11,
+    InsufficientBalance = 12,
+    /// The caller is not authorised to perform this action.
+    Unauthorized = 1,
+
+    /// The provided token amount is zero or negative.
+    InvalidAmount = 2,
+
+    /// The gift is still within its time-lock period and cannot be claimed yet.
+    TimeLockActive = 3,
+
+    /// The requested unlock timestamp is further in the future than the
+    /// contract's hard cap (`MAX_LOCK_DURATION_SECONDS`), protecting users
+    /// from accidentally locking funds for an unreasonable length of time.
+    LockTimeTooFarInFuture = 4,
 }
