@@ -27,21 +27,24 @@ impl GiftContract {
     /// Must be called exactly once immediately after deployment.
     /// Reverts if the admin has already been set, preventing any actor
     /// from overwriting admin rights post-deployment.
-    pub fn initialize(env: Env, admin: Address, token_address: Address) {
-        // Require the designated admin to sign this transaction, preventing
-        // any third party from front-running initialization and hijacking
-        // privileged contract configuration.
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        token_address: Address,
+    ) -> Result<(), ContractError> {
         admin.require_auth();
 
         // Guard: panic if already initialized to prevent admin hijacking.
         if env.storage().instance().has(&DataKey::Admin) {
-            panic!("already initialized");
+            return Err(ContractError::AlreadyInitialized);
         }
 
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
             .instance()
             .set(&DataKey::TokenAddress, &token_address);
+
+        Ok(())
     }
 
     /// Locks USDC from `sender` into the contract as a time-locked gift for
@@ -66,7 +69,7 @@ impl GiftContract {
         recipient: Address,
         amount: i128,
         unlock_time: u64,
-    ) -> u64 {
+    ) -> Result<u64, ContractError> {
         // ── Validate amount ───────────────────────────────────────────────
         if amount <= 0 {
             panic!("{}", ContractError::InvalidAmount as u32);
@@ -78,9 +81,7 @@ impl GiftContract {
         // timestamp is near u64::MAX. Falling back to u64::MAX means every
         // representable unlock time is accepted rather than panicking.
         let current_timestamp: u64 = env.ledger().timestamp();
-        let max_timestamp: u64 = current_timestamp
-            .checked_add(MAX_LOCK_DURATION_SECONDS)
-            .unwrap_or(u64::MAX);
+        let max_timestamp: u64 = current_timestamp.saturating_add(MAX_LOCK_DURATION_SECONDS);
 
         if unlock_time > max_timestamp {
             panic!("{}", ContractError::LockTimeTooFarInFuture as u32);
@@ -109,6 +110,6 @@ impl GiftContract {
         // ── Emit event ────────────────────────────────────────────────────
         emit_gift_created(&env, gift_id, &sender, &recipient, amount, unlock_time);
 
-        gift_id
+        Ok(gift_id)
     }
 }

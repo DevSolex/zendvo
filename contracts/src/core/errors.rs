@@ -5,6 +5,13 @@ use soroban_sdk::contracterror;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum ContractError {
+    AlreadyInitialized = 5,
+    NotInitialized = 6,
+    GiftNotFound = 8,
+    TimeLockNotExpired = 9,
+    AlreadyClaimed = 10,
+    AmountTooSmall = 11,
+    InsufficientBalance = 12,
     /// The caller is not authorised to perform this action.
     Unauthorized = 1,
 
