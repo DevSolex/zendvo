@@ -81,9 +81,7 @@ impl GiftContract {
         // timestamp is near u64::MAX. Falling back to u64::MAX means every
         // representable unlock time is accepted rather than panicking.
         let current_timestamp: u64 = env.ledger().timestamp();
-        let max_timestamp: u64 = current_timestamp
-            .checked_add(MAX_LOCK_DURATION_SECONDS)
-            .unwrap_or(u64::MAX);
+        let max_timestamp: u64 = current_timestamp.saturating_add(MAX_LOCK_DURATION_SECONDS);
 
         if unlock_time > max_timestamp {
             panic!("{}", ContractError::LockTimeTooFarInFuture as u32);

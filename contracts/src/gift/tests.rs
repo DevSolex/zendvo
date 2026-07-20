@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use soroban_sdk::{testutils::Address as _, token, Address, Env};
 
 use crate::gift::contract::{GiftContract, GiftContractClient, MAX_LOCK_DURATION_SECONDS};
