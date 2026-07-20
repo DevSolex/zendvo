@@ -12,6 +12,7 @@ pub enum ContractError {
     AlreadyClaimed = 10,
     AmountTooSmall = 11,
     InsufficientBalance = 12,
+
     /// The caller is not authorised to perform this action.
     Unauthorized = 1,
 
@@ -25,4 +26,7 @@ pub enum ContractError {
     /// contract's hard cap (`MAX_LOCK_DURATION_SECONDS`), protecting users
     /// from accidentally locking funds for an unreasonable length of time.
     LockTimeTooFarInFuture = 4,
+
+    /// Arithmetic overflow occurred while updating a balance.
+    Overflow = 13,
 }
