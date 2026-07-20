@@ -1,11 +1,11 @@
 use soroban_sdk::{contract, contractimpl, token, Address, Env};
 
+use crate::core::errors::ContractError;
 use crate::gift::{
     events::emit_gift_created,
     storage::{get_gift_counter, get_token_address, set_gift, set_gift_counter},
     types::{DataKey, Gift},
 };
-use crate::core::errors::ContractError;
 
 /// Entry point for the time-locked gift contract.
 #[contract]
@@ -19,7 +19,11 @@ impl GiftContract {
     /// Must be called exactly once immediately after deployment.
     /// Reverts if the admin has already been set, preventing any actor
     /// from overwriting admin rights post-deployment.
-    pub fn initialize(env: Env, admin: Address, token_address: Address) -> Result<(), ContractError> {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        token_address: Address,
+    ) -> Result<(), ContractError> {
         // Guard: panic if already initialized to prevent admin hijacking.
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(ContractError::AlreadyInitialized);
@@ -29,7 +33,7 @@ impl GiftContract {
         env.storage()
             .instance()
             .set(&DataKey::TokenAddress, &token_address);
-            
+
         Ok(())
     }
 
