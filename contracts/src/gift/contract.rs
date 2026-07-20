@@ -1,7 +1,7 @@
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 
 use crate::{
-    core::errors::ContractError,
+    core::{errors::ContractError, utils::MIN_DEPOSIT_AMOUNT},
     gift::{
         events::emit_gift_created,
         storage::{get_gift_counter, get_token_address, set_gift, set_gift_counter},
@@ -91,6 +91,10 @@ impl GiftContract {
 
         // ── Authorise and pull funds ──────────────────────────────────────
         sender.require_auth();
+
+        if amount < MIN_DEPOSIT_AMOUNT {
+            return Err(ContractError::AmountTooSmall);
+        }
 
         let token_address = get_token_address(&env);
         let token_client = token::Client::new(&env, &token_address);

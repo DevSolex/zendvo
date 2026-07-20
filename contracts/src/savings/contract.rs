@@ -1,8 +1,9 @@
 use soroban_sdk::{contract, contractimpl, token, Address, Env};
 
-use crate::core::errors::ContractError;
-use crate::savings::events;
-use crate::savings::storage;
+use crate::{
+    core::{errors::ContractError, utils::MIN_DEPOSIT_AMOUNT},
+    savings::{events, storage},
+};
 
 #[contract]
 pub struct SavingsContract;
@@ -14,6 +15,10 @@ impl SavingsContract {
 
         if amount <= 0 {
             return Err(ContractError::InvalidAmount);
+        }
+
+        if amount < MIN_DEPOSIT_AMOUNT {
+            return Err(ContractError::AmountTooSmall);
         }
 
         let token_address = storage::get_token_address(&env);

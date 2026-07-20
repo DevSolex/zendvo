@@ -1,5 +1,6 @@
 use soroban_sdk::{testutils::Address as _, token, Address, Env};
 
+use crate::core::utils::MIN_DEPOSIT_AMOUNT;
 use crate::gift::contract::{GiftContract, GiftContractClient, MAX_LOCK_DURATION_SECONDS};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -63,14 +64,14 @@ impl<'a> TestFixture<'a> {
 /// Happy path: unlock_time exactly at the maximum allowed boundary should succeed.
 #[test]
 fn test_create_gift_at_max_boundary_succeeds() {
-    let f = TestFixture::setup(1_000_000);
+    let f = TestFixture::setup(20_000_000);
 
     let ledger_now: u64 = f.env.ledger().timestamp();
     let unlock_time = ledger_now + MAX_LOCK_DURATION_SECONDS; // exactly at cap
 
     let gift_id = f
         .client
-        .create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
+        .create_gift(&f.sender, &f.recipient, &MIN_DEPOSIT_AMOUNT, &unlock_time);
 
     assert_eq!(gift_id, 1, "first gift should receive id=1");
 }
@@ -78,7 +79,7 @@ fn test_create_gift_at_max_boundary_succeeds() {
 /// Happy path: unlock_time well within the cap.
 #[test]
 fn test_create_gift_normal_unlock_succeeds() {
-    let f = TestFixture::setup(1_000_000);
+    let f = TestFixture::setup(20_000_000);
 
     let ledger_now: u64 = f.env.ledger().timestamp();
     let one_year: u64 = 365 * 24 * 60 * 60;
@@ -86,7 +87,7 @@ fn test_create_gift_normal_unlock_succeeds() {
 
     let gift_id = f
         .client
-        .create_gift(&f.sender, &f.recipient, &100_000, &unlock_time);
+        .create_gift(&f.sender, &f.recipient, &MIN_DEPOSIT_AMOUNT, &unlock_time);
 
     assert_eq!(gift_id, 1);
 }
@@ -132,23 +133,46 @@ fn test_create_gift_zero_amount_panics() {
         .create_gift(&f.sender, &f.recipient, &0, &unlock_time);
 }
 
+#[test]
+#[should_panic]
+fn test_create_gift_below_minimum_amount_panics() {
+    let f = TestFixture::setup(1_000_000);
+
+    let ledger_now: u64 = f.env.ledger().timestamp();
+    let unlock_time = ledger_now + 1000;
+    let amount = MIN_DEPOSIT_AMOUNT - 1;
+
+    f.client
+        .create_gift(&f.sender, &f.recipient, &amount, &unlock_time);
+}
+
 /// The gift counter increments correctly across multiple gifts.
 #[test]
 fn test_gift_ids_are_sequential() {
-    let f = TestFixture::setup(3_000_000);
+    let f = TestFixture::setup(100_000_000);
 
     let ledger_now: u64 = f.env.ledger().timestamp();
     let unlock_time = ledger_now + 3600;
 
     let id1 = f
         .client
-        .create_gift(&f.sender, &f.recipient, &100_000, &unlock_time);
+        .create_gift(&f.sender, &f.recipient, &MIN_DEPOSIT_AMOUNT, &unlock_time);
     let id2 = f
         .client
-        .create_gift(&f.sender, &f.recipient, &200_000, &unlock_time);
+        .create_gift(
+            &f.sender,
+            &f.recipient,
+            &(MIN_DEPOSIT_AMOUNT + 10_000_000),
+            &unlock_time,
+        );
     let id3 = f
         .client
-        .create_gift(&f.sender, &f.recipient, &300_000, &unlock_time);
+        .create_gift(
+            &f.sender,
+            &f.recipient,
+            &(MIN_DEPOSIT_AMOUNT + 20_000_000),
+            &unlock_time,
+        );
 
     assert_eq!((id1, id2, id3), (1, 2, 3));
 }
