@@ -16,10 +16,8 @@ pub struct InitializedEvent {
 /// * `env` - The Soroban environment.
 /// * `admin` - The address of the admin set during initialization.
 pub fn emit_initialized(env: &Env, admin: &Address) {
-    env.events().publish(
-        (symbol_short!("init"),),
-        admin.clone(),
-    );
+    env.events()
+        .publish((symbol_short!("init"),), admin.clone());
 }
 
 #[cfg(test)]
