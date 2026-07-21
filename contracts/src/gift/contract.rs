@@ -1,7 +1,7 @@
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 
 use crate::{
-    core::errors::ContractError,
+    core::{errors::ContractError, events::emit_initialized},
     gift::{
         events::emit_gift_created,
         storage::{get_gift_counter, get_token_address, set_gift, set_gift_counter},
@@ -45,6 +45,8 @@ impl GiftContract {
         env.storage()
             .instance()
             .set(&DataKey::TokenAddress, &token_address);
+
+        emit_initialized(&env, &admin);
 
         Ok(())
     }
