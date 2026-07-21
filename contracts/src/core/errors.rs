@@ -29,4 +29,7 @@ pub enum ContractError {
 
     /// Arithmetic overflow occurred while updating a balance.
     Overflow = 13,
+
+    /// The user has no yield to claim; yield_shares is zero.
+    NoYieldToClaim = 14,
 }
