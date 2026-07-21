@@ -259,8 +259,170 @@ fn test_multi_user_isolation() {
     assert_eq!(token_client.balance(&user_b), b_balance_before + 1000);
 }
 
+// ── withdraw_savings tests ─────────────────────────────────────────────────────
+
 #[test]
-fn test_claim_yield_insufficient_balance_rollback() {
+fn test_withdraw_savings_full_amount() {
+    let f = TestFixture::setup();
+    let deposit_amount: i128 = 10_000;
+    seed_savings(&f.env, &f.contract_id, &f.user, deposit_amount, 0);
+
+    let token_client = token::Client::new(&f.env, &f.token_id);
+    let balance_before = token_client.balance(&f.user);
+
+    f.client.withdraw_savings(&f.user, &deposit_amount);
+
+    let balance_after = token_client.balance(&f.user);
+    assert_eq!(balance_after - balance_before, deposit_amount);
+
+    // Verify principal is zeroed
+    let record: UserSavings = f.env.as_contract(&f.contract_id, || {
+        f.env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserSavingsRecord(f.user.clone()))
+            .unwrap()
+    });
+    assert_eq!(record.principal, 0);
+}
+
+#[test]
+fn test_withdraw_savings_partial_amount() {
+    let f = TestFixture::setup();
+    seed_savings(&f.env, &f.contract_id, &f.user, 10_000, 0);
+
+    let token_client = token::Client::new(&f.env, &f.token_id);
+    let balance_before = token_client.balance(&f.user);
+
+    f.client.withdraw_savings(&f.user, &4_000);
+
+    let balance_after = token_client.balance(&f.user);
+    assert_eq!(balance_after - balance_before, 4_000);
+
+    let record: UserSavings = f.env.as_contract(&f.contract_id, || {
+        f.env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserSavingsRecord(f.user.clone()))
+            .unwrap()
+    });
+    assert_eq!(record.principal, 6_000);
+}
+
+#[test]
+fn test_withdraw_savings_exceeds_balance_fails() {
+    let f = TestFixture::setup();
+    seed_savings(&f.env, &f.contract_id, &f.user, 5_000, 0);
+
+    let result = f.client.try_withdraw_savings(&f.user, &10_000);
+    assert_eq!(result, Err(Ok(ContractError::InsufficientBalance)));
+}
+
+#[test]
+fn test_withdraw_savings_no_record_fails() {
+    let f = TestFixture::setup();
+    // No seed_savings — no record exists
+
+    let result = f.client.try_withdraw_savings(&f.user, &1_000);
+    assert_eq!(result, Err(Ok(ContractError::UserNotFound)));
+}
+
+#[test]
+fn test_withdraw_savings_rejects_unauthorized() {
+    let env = Env::default();
+    // No mock_all_auths — require_auth is not bypassed
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let token_id = create_token(&env, &admin);
+    let contract_id = env.register(SavingsContract, (token_id.clone(),));
+    let client = SavingsContractClient::new(&env, &contract_id);
+
+    let result = client.try_withdraw_savings(&user, &1_000);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_withdraw_savings_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let token_id = create_token(&env, &admin);
+    let asset_client = token::StellarAssetClient::new(&env, &token_id);
+    let contract_id = env.register(SavingsContract, (token_id.clone(),));
+    let client = SavingsContractClient::new(&env, &contract_id);
+
+    asset_client.mint(&contract_id, &1_000_000_000);
+    seed_savings(&env, &contract_id, &user, 10_000, 0);
+
+    client.withdraw_savings(&user, &3_000);
+    let events = env.events().all();
+
+    // Last event must be SavWth
+    let (contract, topics, data) = events.get(events.len() - 1).unwrap();
+    assert_eq!(contract, contract_id);
+
+    let topic0: soroban_sdk::Symbol = topics.get(0).unwrap().try_into_val(&env).unwrap();
+    assert_eq!(topic0, symbol_short!("SavWth"));
+
+    let topic1: Address = topics.get(1).unwrap().try_into_val(&env).unwrap();
+    assert_eq!(topic1, user.clone());
+
+    let data_i128: i128 = data.try_into_val(&env).unwrap();
+    assert_eq!(data_i128, 3_000i128);
+}
+
+#[test]
+fn test_withdraw_savings_preserves_yield_shares() {
+    let f = TestFixture::setup();
+    seed_savings(&f.env, &f.contract_id, &f.user, 10_000, 500);
+
+    f.client.withdraw_savings(&f.user, &3_000);
+
+    let record: UserSavings = f.env.as_contract(&f.contract_id, || {
+        f.env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserSavingsRecord(f.user.clone()))
+            .unwrap()
+    });
+    assert_eq!(record.yield_shares, 500, "yield shares must remain untouched");
+    assert_eq!(record.principal, 7_000, "principal reduced by withdrawal");
+}
+
+#[test]
+fn test_withdraw_savings_multi_user_isolation() {
+    let f = TestFixture::setup();
+    let user_b = Address::generate(&f.env);
+
+    seed_savings(&f.env, &f.contract_id, &f.user, 10_000, 0);
+    seed_savings(&f.env, &f.contract_id, &user_b, 20_000, 0);
+
+    let token_client = token::Client::new(&f.env, &f.token_id);
+    let b_balance_before = token_client.balance(&user_b);
+
+    // User A withdraws
+    f.client.withdraw_savings(&f.user, &5_000);
+
+    // User B's record must be completely untouched
+    let b_record: UserSavings = f.env.as_contract(&f.contract_id, || {
+        f.env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserSavingsRecord(user_b.clone()))
+            .unwrap()
+    });
+    assert_eq!(b_record.principal, 20_000, "user_b principal unchanged");
+
+    // User B can still withdraw their full amount
+    f.client.withdraw_savings(&user_b, &20_000);
+    assert_eq!(token_client.balance(&user_b), b_balance_before + 20_000);
+}
+
+#[test]
+fn test_withdraw_savings_insufficient_balance_rollback() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -271,14 +433,14 @@ fn test_claim_yield_insufficient_balance_rollback() {
     let contract_id = env.register(SavingsContract, (token_id.clone(),));
     let client = SavingsContractClient::new(&env, &contract_id);
 
-    // Seed yield but do NOT mint any USDC to the contract
-    seed_savings(&env, &contract_id, &user, 10_000, 500);
+    // Seed principal but do NOT mint any USDC to the contract
+    seed_savings(&env, &contract_id, &user, 10_000, 0);
 
-    // Attempt to claim — token transfer panics (insufficient balance)
-    let result = client.try_claim_yield(&user);
-    assert!(result.is_err(), "claim must fail when contract has no USDC");
+    // Attempt to withdraw — token transfer panics (insufficient balance)
+    let result = client.try_withdraw_savings(&user, &5_000);
+    assert!(result.is_err(), "withdraw must fail when contract has no USDC");
 
-    // Verify atomic rollback: yield_shares and principal are unchanged
+    // Verify atomic rollback: principal is unchanged
     let saved: UserSavings = env.as_contract(&contract_id, || {
         env.storage()
             .persistent()
@@ -286,11 +448,36 @@ fn test_claim_yield_insufficient_balance_rollback() {
             .unwrap()
     });
     assert_eq!(
-        saved.yield_shares, 500,
-        "yield_shares rolled back after failed transfer"
+        saved.principal, 10_000,
+        "principal rolled back after failed transfer"
     );
     assert_eq!(
-        saved.principal, 10_000,
-        "principal unchanged after failed transfer"
+        saved.yield_shares, 0,
+        "yield_shares unchanged after failed transfer"
     );
 }
+
+#[test]
+fn test_withdraw_savings_zero_amount_succeeds() {
+    let f = TestFixture::setup();
+    seed_savings(&f.env, &f.contract_id, &f.user, 10_000, 0);
+
+    let token_client = token::Client::new(&f.env, &f.token_id);
+    let balance_before = token_client.balance(&f.user);
+
+    f.client.withdraw_savings(&f.user, &0);
+
+    let balance_after = token_client.balance(&f.user);
+    assert_eq!(balance_after - balance_before, 0);
+
+    let record: UserSavings = f.env.as_contract(&f.contract_id, || {
+        f.env
+            .storage()
+            .persistent()
+            .get(&DataKey::UserSavingsRecord(f.user.clone()))
+            .unwrap()
+    });
+    assert_eq!(record.principal, 10_000, "principal unchanged when withdrawing 0");
+}
+
+
