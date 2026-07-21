@@ -1,4 +1,8 @@
-use soroban_sdk::{testutils::Address as _, token, Address, Env};
+use soroban_sdk::{
+    symbol_short,
+    testutils::{Address as _, Events as _},
+    token, vec, Address, Env, IntoVal,
+};
 
 use crate::gift::contract::{GiftContract, GiftContractClient, MAX_LOCK_DURATION_SECONDS};
 
@@ -59,6 +63,33 @@ impl<'a> TestFixture<'a> {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+/// Initializing the contract emits an `Initialized` event with the admin address.
+#[test]
+fn test_initialize_emits_initialized_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let token_id = Address::generate(&env);
+
+    let contract_id = env.register(GiftContract, ());
+    let client = GiftContractClient::new(&env, &contract_id);
+
+    client.initialize(&admin, &token_id);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                contract_id,
+                (symbol_short!("init"),).into_val(&env),
+                admin.into_val(&env),
+            )
+        ]
+    );
+}
 
 /// Happy path: unlock_time exactly at the maximum allowed boundary should succeed.
 #[test]
