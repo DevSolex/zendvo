@@ -12,6 +12,12 @@ pub fn get_user_savings(env: &Env, user: &Address) -> UserSavings {
         })
 }
 
+pub fn has_user_savings(env: &Env, user: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::UserSavingsRecord(user.clone()))
+}
+
 pub fn set_user_savings(env: &Env, user: &Address, record: &UserSavings) {
     env.storage()
         .persistent()

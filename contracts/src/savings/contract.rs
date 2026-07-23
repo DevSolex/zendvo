@@ -74,4 +74,41 @@ impl SavingsContract {
 
         Ok(())
     }
+
+    /// Withdraws principal savings back to the user's wallet.
+    ///
+    /// Execution order (checks-effects-interactions):
+    /// 1. Authorize the user.
+    /// 2. Verify the user has a savings record.
+    /// 3. Verify the user has sufficient principal.
+    /// 4. Deduct principal using checked arithmetic and persist.
+    /// 5. Transfer the requested USDC amount from contract to user.
+    /// 6. Emit the event.
+    pub fn withdraw_savings(env: Env, user: Address, amount: i128) -> Result<(), ContractError> {
+        user.require_auth();
+
+        if !storage::has_user_savings(&env, &user) {
+            return Err(ContractError::UserNotFound);
+        }
+
+        let mut record = storage::get_user_savings(&env, &user);
+
+        if record.principal < amount {
+            return Err(ContractError::InsufficientBalance);
+        }
+
+        record.principal = record
+            .principal
+            .checked_sub(amount)
+            .ok_or(ContractError::Overflow)?;
+        storage::set_user_savings(&env, &user, &record);
+
+        let token_address = storage::get_token_address(&env);
+        let token_client = token::Client::new(&env, &token_address);
+        token_client.transfer(&env.current_contract_address(), &user, &amount);
+
+        events::emit_savings_withdrawn(&env, &user, amount);
+
+        Ok(())
+    }
 }

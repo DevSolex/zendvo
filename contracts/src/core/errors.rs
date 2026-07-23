@@ -32,4 +32,7 @@ pub enum ContractError {
 
     /// The user has no yield to claim; yield_shares is zero.
     NoYieldToClaim = 14,
+
+    /// The user has no savings record found in storage.
+    UserNotFound = 15,
 }
