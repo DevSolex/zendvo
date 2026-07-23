@@ -20,6 +20,23 @@ pub fn emit_gift_created(
     );
 }
 
+/// Emitted when a sender cancels an unclaimed gift.
+///
+/// Topics : ["GiftCncld", sender]
+/// Data   : (gift_id, amount, timestamp)
+pub fn emit_gift_cancelled(
+    env: &Env,
+    gift_id: u64,
+    sender: &Address,
+    amount: i128,
+) {
+    let timestamp = env.ledger().timestamp();
+    env.events().publish(
+        (symbol_short!("GiftCncld"), sender.clone()),
+        (gift_id, amount, timestamp),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::emit_gift_created;

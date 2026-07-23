@@ -1,4 +1,8 @@
-use soroban_sdk::{testutils::Address as _, token, Address, Env};
+use soroban_sdk::{
+    symbol_short,
+    testutils::{Address as _, Events as _},
+    token, vec, Address, Env, IntoVal,
+};
 
 use crate::core::utils::MIN_DEPOSIT_AMOUNT;
 use crate::gift::contract::{GiftContract, GiftContractClient, MAX_LOCK_DURATION_SECONDS};
@@ -60,6 +64,33 @@ impl<'a> TestFixture<'a> {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+/// Initializing the contract emits an `Initialized` event with the admin address.
+#[test]
+fn test_initialize_emits_initialized_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let token_id = Address::generate(&env);
+
+    let contract_id = env.register(GiftContract, ());
+    let client = GiftContractClient::new(&env, &contract_id);
+
+    client.initialize(&admin, &token_id);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                contract_id,
+                (symbol_short!("init"),).into_val(&env),
+                admin.into_val(&env),
+            )
+        ]
+    );
+}
 
 /// Happy path: unlock_time exactly at the maximum allowed boundary should succeed.
 #[test]
@@ -175,4 +206,92 @@ fn test_gift_ids_are_sequential() {
         );
 
     assert_eq!((id1, id2, id3), (1, 2, 3));
+}
+
+// ── cancel_gift tests ─────────────────────────────────────────────────────────
+
+/// Happy path: sender cancels an unclaimed gift and receives a refund.
+#[test]
+fn test_cancel_gift_succeeds() {
+    let f = TestFixture::setup(1_000_000);
+
+    let ledger_now: u64 = f.env.ledger().timestamp();
+    let unlock_time = ledger_now + 3600;
+
+    let gift_id = f.client.create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
+
+    // Check contract balance before cancel.
+    let token_client = token::Client::new(&f.env, &f.token_id);
+    let contract_balance_before = token_client.balance(&f.contract_id);
+    assert_eq!(contract_balance_before, 500_000);
+
+    f.client.cancel_gift(&f.sender, &gift_id);
+
+    // Contract balance should be 0 after refund.
+    let contract_balance_after = token_client.balance(&f.contract_id);
+    assert_eq!(contract_balance_after, 0);
+
+    // Sender should have their full balance back.
+    let sender_balance = token_client.balance(&f.sender);
+    assert_eq!(sender_balance, 1_000_000);
+}
+
+/// Sad path: cancelling a non-existent gift returns GiftNotFound.
+#[test]
+fn test_cancel_gift_not_found() {
+    let f = TestFixture::setup(1_000_000);
+
+    let result = f.client.try_cancel_gift(&f.sender, &999);
+    assert_eq!(
+        result.err().unwrap().unwrap(),
+        crate::core::errors::ContractError::GiftNotFound,
+    );
+}
+
+/// Sad path: a non-sender trying to cancel returns Unauthorized.
+#[test]
+fn test_cancel_gift_unauthorized() {
+    let f = TestFixture::setup(1_000_000);
+    let imposter = Address::generate(&f.env);
+
+    let ledger_now: u64 = f.env.ledger().timestamp();
+    let unlock_time = ledger_now + 3600;
+    let gift_id = f.client.create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
+
+    let result = f.client.try_cancel_gift(&imposter, &gift_id);
+    assert_eq!(
+        result.err().unwrap().unwrap(),
+        crate::core::errors::ContractError::Unauthorized,
+    );
+}
+
+/// Sad path: cancelling an already-claimed gift returns AlreadyClaimed.
+#[test]
+fn test_cancel_gift_already_claimed() {
+    let f = TestFixture::setup(1_000_000);
+
+    let ledger_now: u64 = f.env.ledger().timestamp();
+    let unlock_time = ledger_now + 3600;
+    let gift_id = f.client.create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
+
+    // Manually mark the gift as claimed by writing storage inside the contract context.
+    let claimed_gift = crate::gift::types::Gift {
+        sender: f.sender.clone(),
+        recipient: f.recipient.clone(),
+        amount: 500_000,
+        unlock_time,
+        is_claimed: true,
+    };
+    f.env.as_contract(&f.contract_id, || {
+        f.env.storage().persistent().set(
+            &crate::gift::types::DataKey::GiftRecord(gift_id),
+            &claimed_gift,
+        );
+    });
+
+    let result = f.client.try_cancel_gift(&f.sender, &gift_id);
+    assert_eq!(
+        result.err().unwrap().unwrap(),
+        crate::core::errors::ContractError::AlreadyClaimed,
+    );
 }

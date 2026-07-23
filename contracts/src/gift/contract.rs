@@ -2,9 +2,12 @@ use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 
 use crate::{
     core::{errors::ContractError, utils::MIN_DEPOSIT_AMOUNT},
+    core::{errors::ContractError, events::emit_initialized},
     gift::{
-        events::emit_gift_created,
-        storage::{get_gift_counter, get_token_address, set_gift, set_gift_counter},
+        events::{emit_gift_cancelled, emit_gift_created},
+        storage::{
+            get_gift_counter, get_token_address, remove_gift, set_gift, set_gift_counter,
+        },
         types::{DataKey, Gift},
     },
 };
@@ -45,6 +48,8 @@ impl GiftContract {
         env.storage()
             .instance()
             .set(&DataKey::TokenAddress, &token_address);
+
+        emit_initialized(&env, &admin);
 
         Ok(())
     }
@@ -117,6 +122,47 @@ impl GiftContract {
         emit_gift_created(&env, gift_id, &sender, &recipient, amount, unlock_time);
 
         Ok(gift_id)
+    }
+
+    /// Cancels an unclaimed gift and refunds the locked USDC to the sender.
+    ///
+    /// Only the original sender may cancel. The gift must not have been claimed
+    /// yet. Upon success the gift record is removed from storage and the locked
+    /// amount is transferred back to the sender.
+    pub fn cancel_gift(
+        env: Env,
+        sender: Address,
+        gift_id: u64,
+    ) -> Result<(), ContractError> {
+        sender.require_auth();
+
+        let gift: Gift = env
+            .storage()
+            .persistent()
+            .get(&DataKey::GiftRecord(gift_id))
+            .ok_or(ContractError::GiftNotFound)?;
+
+        if sender != gift.sender {
+            return Err(ContractError::Unauthorized);
+        }
+
+        if gift.is_claimed {
+            return Err(ContractError::AlreadyClaimed);
+        }
+
+        let token_address = get_token_address(&env);
+        let token_client = token::Client::new(&env, &token_address);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &sender,
+            &gift.amount,
+        );
+
+        remove_gift(&env, gift_id);
+
+        emit_gift_cancelled(&env, gift_id, &sender, gift.amount);
+
+        Ok(())
     }
 
     /// Upgrades the current contract Wasm for the already initialized backend admin.
