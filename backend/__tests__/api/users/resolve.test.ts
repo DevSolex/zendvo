@@ -5,7 +5,7 @@ import { getAuthPayload } from "@/lib/auth-session";
 
 jest.mock("drizzle-orm", () => ({
   eq: jest.fn(() => ({})),
-  or: jest.fn(() => ({})),
+  asc: jest.fn(() => ({})),
 }));
 
 jest.mock("@/lib/db", () => ({
@@ -25,6 +25,7 @@ jest.mock("@/lib/db/schema", () => ({
   wallets: {
     userId: "userId",
     currency: "currency",
+    createdAt: "createdAt",
   },
 }));
 
@@ -47,20 +48,32 @@ const makeEmailRequest = (email?: string) => {
   return new NextRequest(url, { method: "GET" });
 };
 
-// Build a db.select() chain that returns first call result then second call result
-const mockDbSelectChain = (firstResult: unknown[], secondResult: unknown[] = []) => {
+/**
+ * Build a db.select() chain mock.
+ *
+ * The users query chain is: select → from → where → limit
+ * The wallets query chain is: select → from → where → orderBy → limit
+ *
+ * We track call count so the first select() call returns usersResult and the
+ * second returns walletsResult.
+ */
+const mockDbSelectChain = (usersResult: unknown[], walletsResult: unknown[] = []) => {
   let callCount = 0;
-  const makeLimitMock = () =>
-    jest.fn().mockImplementation(() => {
-      callCount++;
-      return callCount === 1 ? Promise.resolve(firstResult) : Promise.resolve(secondResult);
-    });
 
-  const limitMock = makeLimitMock();
-  const whereMock = jest.fn(() => ({ limit: limitMock }));
-  const fromMock = jest.fn(() => ({ where: whereMock }));
-  const selectMock = jest.fn(() => ({ from: fromMock }));
-  (db.select as jest.Mock).mockImplementation(selectMock);
+  (db.select as jest.Mock).mockImplementation(() => {
+    callCount++;
+    const isUsersCall = callCount === 1;
+
+    const limitMock = jest.fn().mockResolvedValue(isUsersCall ? usersResult : walletsResult);
+    const orderByMock = jest.fn(() => ({ limit: limitMock }));
+    const whereMock = jest.fn(() => ({
+      limit: limitMock,      // users query doesn't call orderBy
+      orderBy: orderByMock,  // wallets query does
+    }));
+    const fromMock = jest.fn(() => ({ where: whereMock }));
+
+    return { from: fromMock };
+  });
 };
 
 describe("GET /api/users/resolve", () => {
@@ -171,7 +184,7 @@ describe("GET /api/users/resolve", () => {
     expect(json.data.avatarUrl).toBe("https://example.com/avatar.jpg");
     expect(json.data.currency).toBe("NGN");
 
-    // Masking: raw PII must not be exposed
+    // Raw PII must not be exposed
     expect(json.data.email).toBeUndefined();
     expect(json.data.phoneNumber).toBeUndefined();
     expect(json.data.passwordHash).toBeUndefined();
@@ -181,6 +194,8 @@ describe("GET /api/users/resolve", () => {
     expect(json.data.maskedEmail).not.toBe("jane@example.com");
     expect(json.data.maskedPhone).toBeDefined();
     expect(json.data.maskedPhone).not.toBe("+2348123456789");
+    // Masking must hide at least 3 chars in the middle
+    expect((json.data.maskedPhone.match(/\*/g) || []).length).toBeGreaterThanOrEqual(3);
   });
 
   // ── Successful email lookup ─────────────────────────────────────────────────
@@ -206,9 +221,27 @@ describe("GET /api/users/resolve", () => {
     expect(json.data.email).toBeUndefined();
     expect(json.data.phoneNumber).toBeUndefined();
 
-    // Masked versions present
+    // Masked email present and redacted
     expect(json.data.maskedEmail).toBeDefined();
     expect(json.data.maskedEmail).not.toBe("john@example.com");
+  });
+
+  // ── Email lookup is case-insensitive ────────────────────────────────────────
+
+  it("normalises email to lowercase before lookup", async () => {
+    (getAuthPayload as jest.Mock).mockResolvedValue({ userId: "s-11", email: "s@x.com", role: "user" });
+
+    mockDbSelectChain(
+      [{ id: "ci-user", name: "Case User", avatarUrl: null, email: "ci@example.com", phoneNumber: null }],
+      [],
+    );
+
+    // Mixed-case input should resolve without error
+    const response = await GET(makeEmailRequest("CI@Example.COM"));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.data.id).toBe("ci-user");
   });
 
   // ── International numbers ───────────────────────────────────────────────────
@@ -228,6 +261,28 @@ describe("GET /api/users/resolve", () => {
     expect(json.data.id).toBe("uk-user");
   });
 
+  // ── Short phone masking safety ──────────────────────────────────────────────
+
+  it("always hides at least 3 chars for a short valid E.164 number", async () => {
+    (getAuthPayload as jest.Mock).mockResolvedValue({ userId: "s-12", email: "s@x.com", role: "user" });
+
+    // +1234567 is 8 chars — the shortest the validator accepts
+    mockDbSelectChain(
+      [{ id: "short-phone-user", name: "Short", avatarUrl: null, email: "s@s.com", phoneNumber: "+1234567" }],
+      [],
+    );
+
+    const response = await GET(makePhoneRequest("+1234567"));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    const maskedPhone: string = json.data.maskedPhone;
+    const hiddenCount = (maskedPhone.match(/\*/g) || []).length;
+    expect(hiddenCount).toBeGreaterThanOrEqual(3);
+    // The full original number must not appear verbatim
+    expect(maskedPhone).not.toBe("+1234567");
+  });
+
   // ── No wallet ───────────────────────────────────────────────────────────────
 
   it("returns null currency when user has no wallet", async () => {
@@ -235,7 +290,7 @@ describe("GET /api/users/resolve", () => {
 
     mockDbSelectChain(
       [{ id: "no-wallet-user", name: "No Wallet", avatarUrl: null, email: "nw@example.com", phoneNumber: "+2348000000000" }],
-      [], // empty wallet result
+      [],
     );
 
     const response = await GET(makePhoneRequest("+2348000000000"));

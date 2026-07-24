@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, or } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { users, wallets } from "@/lib/db/schema";
@@ -18,7 +18,7 @@ import { consumeRateLimit } from "@/lib/rate-limiter";
 const RESOLVE_RATE_LIMIT = 20;
 const RESOLVE_RATE_WINDOW_MS = 60_000;
 
-/** Mask an email: "john.doe@example.com" → "jo**@example.com" */
+/** Mask an email: "john.doe@example.com" → "jo***@example.com" */
 function maskEmail(email: string): string {
   const [local, domain] = email.split("@");
   if (!domain) return "***";
@@ -26,13 +26,38 @@ function maskEmail(email: string): string {
   return `${visible}***@${domain}`;
 }
 
-/** Mask a phone number: "+2348123456789" → "+234*****6789" */
+/**
+ * Mask a phone number safely: "+2348123456789" → "+234*****6789"
+ *
+ * We show at most the first 4 chars (country-code prefix) and the last 4 digits.
+ * The two visible windows are clamped so they never overlap — for short but
+ * valid E.164 numbers the prefix is shortened and/or the suffix is omitted to
+ * guarantee at least 3 hidden characters in the middle.
+ */
 function maskPhone(phone: string): string {
-  if (phone.length <= 6) return "***";
-  const prefix = phone.slice(0, phone.startsWith("+") ? 4 : 3);
-  const last4 = phone.slice(-4);
-  const hidden = "*".repeat(Math.max(phone.length - prefix.length - 4, 3));
-  return `${prefix}${hidden}${last4}`;
+  const len = phone.length;
+  if (len <= 6) return "***";
+
+  // How many chars we want to show at the start (country code hint)
+  const wantPrefix = phone.startsWith("+") ? 4 : 3;
+  // How many chars we want to show at the end (last-4 confirmation)
+  const wantSuffix = 4;
+  // Minimum hidden chars to guarantee real obfuscation
+  const minHidden = 3;
+
+  // Total budget: we must hide at least minHidden chars
+  const maxVisible = len - minHidden;
+
+  // Clamp prefix + suffix to the available budget, prefix takes priority
+  const actualPrefix = Math.min(wantPrefix, maxVisible);
+  const actualSuffix = Math.min(wantSuffix, Math.max(0, maxVisible - actualPrefix));
+
+  const prefix = phone.slice(0, actualPrefix);
+  const suffix = actualSuffix > 0 ? phone.slice(len - actualSuffix) : "";
+  const hiddenCount = len - actualPrefix - actualSuffix;
+  const hidden = "*".repeat(hiddenCount);
+
+  return `${prefix}${hidden}${suffix}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -115,6 +140,9 @@ export async function GET(request: NextRequest) {
           "Invalid email address format.",
         );
       }
+      // Normalise to lowercase so lookup matches regardless of how the address
+      // was stored (defensive — registration should also lowercase, but this
+      // ensures resolution never silently fails due to case drift).
       whereCondition = eq(users.email, trimmed.toLowerCase());
       lookupType = "email";
     }
@@ -146,10 +174,13 @@ export async function GET(request: NextRequest) {
     // We intentionally allow it so the sender can confirm their own profile renders correctly.
 
     // --- Fetch the recipient's primary wallet currency ---
+    // Order by createdAt ASC so we always pick the earliest (primary) wallet
+    // deterministically — a user may hold multiple currency wallets.
     const walletRows = await db
       .select({ currency: wallets.currency })
       .from(wallets)
       .where(eq(wallets.userId, recipient.id))
+      .orderBy(asc(wallets.createdAt))
       .limit(1);
 
     const currency = walletRows[0]?.currency ?? null;
