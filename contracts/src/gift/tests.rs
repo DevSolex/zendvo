@@ -127,13 +127,13 @@ fn test_create_gift_normal_unlock_succeeds() {
 #[test]
 #[should_panic]
 fn test_create_gift_beyond_cap_panics() {
-    let f = TestFixture::setup(1_000_000);
+    let f = TestFixture::setup(100_000_000);
 
     let ledger_now: u64 = f.env.ledger().timestamp();
     let over_cap = ledger_now + MAX_LOCK_DURATION_SECONDS + 1;
 
     f.client
-        .create_gift(&f.sender, &f.recipient, &500_000, &over_cap);
+        .create_gift(&f.sender, &f.recipient, &MIN_DEPOSIT_AMOUNT, &over_cap);
 }
 
 /// Sad path: astronomical timestamp (simulating a front-end ms-instead-of-s
@@ -141,21 +141,21 @@ fn test_create_gift_beyond_cap_panics() {
 #[test]
 #[should_panic]
 fn test_create_gift_astronomical_timestamp_panics() {
-    let f = TestFixture::setup(1_000_000);
+    let f = TestFixture::setup(100_000_000);
 
     // Simulate a front-end bug: Unix ms timestamp used instead of seconds
     // (~year 33,658 equivalent).
-    let astronomical: u64 = 1_000_000_000_000;
+    let astronomical: u64 = 100_000_000_000_000;
 
     f.client
-        .create_gift(&f.sender, &f.recipient, &500_000, &astronomical);
+        .create_gift(&f.sender, &f.recipient, &MIN_DEPOSIT_AMOUNT, &astronomical);
 }
 
 /// Sad path: zero amount must panic.
 #[test]
 #[should_panic]
 fn test_create_gift_zero_amount_panics() {
-    let f = TestFixture::setup(1_000_000);
+    let f = TestFixture::setup(100_000_000);
 
     let ledger_now: u64 = f.env.ledger().timestamp();
     let unlock_time = ledger_now + 1000;
@@ -167,7 +167,7 @@ fn test_create_gift_zero_amount_panics() {
 #[test]
 #[should_panic]
 fn test_create_gift_below_minimum_amount_panics() {
-    let f = TestFixture::setup(1_000_000);
+    let f = TestFixture::setup(100_000_000);
 
     let ledger_now: u64 = f.env.ledger().timestamp();
     let unlock_time = ledger_now + 1000;
@@ -209,19 +209,19 @@ fn test_gift_ids_are_sequential() {
 /// Happy path: sender cancels an unclaimed gift and receives a refund.
 #[test]
 fn test_cancel_gift_succeeds() {
-    let f = TestFixture::setup(1_000_000);
+    let f = TestFixture::setup(100_000_000);
 
     let ledger_now: u64 = f.env.ledger().timestamp();
     let unlock_time = ledger_now + 3600;
 
     let gift_id = f
         .client
-        .create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
+        .create_gift(&f.sender, &f.recipient, &MIN_DEPOSIT_AMOUNT, &unlock_time);
 
     // Check contract balance before cancel.
     let token_client = token::Client::new(&f.env, &f.token_id);
     let contract_balance_before = token_client.balance(&f.contract_id);
-    assert_eq!(contract_balance_before, 500_000);
+    assert_eq!(contract_balance_before, MIN_DEPOSIT_AMOUNT);
 
     f.client.cancel_gift(&f.sender, &gift_id);
 
@@ -231,13 +231,13 @@ fn test_cancel_gift_succeeds() {
 
     // Sender should have their full balance back.
     let sender_balance = token_client.balance(&f.sender);
-    assert_eq!(sender_balance, 1_000_000);
+    assert_eq!(sender_balance, 100_000_000);
 }
 
 /// Sad path: cancelling a non-existent gift returns GiftNotFound.
 #[test]
 fn test_cancel_gift_not_found() {
-    let f = TestFixture::setup(1_000_000);
+    let f = TestFixture::setup(100_000_000);
 
     let result = f.client.try_cancel_gift(&f.sender, &999);
     assert_eq!(
@@ -249,14 +249,14 @@ fn test_cancel_gift_not_found() {
 /// Sad path: a non-sender trying to cancel returns Unauthorized.
 #[test]
 fn test_cancel_gift_unauthorized() {
-    let f = TestFixture::setup(1_000_000);
+    let f = TestFixture::setup(100_000_000);
     let imposter = Address::generate(&f.env);
 
     let ledger_now: u64 = f.env.ledger().timestamp();
     let unlock_time = ledger_now + 3600;
     let gift_id = f
         .client
-        .create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
+        .create_gift(&f.sender, &f.recipient, &MIN_DEPOSIT_AMOUNT, &unlock_time);
 
     let result = f.client.try_cancel_gift(&imposter, &gift_id);
     assert_eq!(
@@ -268,19 +268,19 @@ fn test_cancel_gift_unauthorized() {
 /// Sad path: cancelling an already-claimed gift returns AlreadyClaimed.
 #[test]
 fn test_cancel_gift_already_claimed() {
-    let f = TestFixture::setup(1_000_000);
+    let f = TestFixture::setup(100_000_000);
 
     let ledger_now: u64 = f.env.ledger().timestamp();
     let unlock_time = ledger_now + 3600;
     let gift_id = f
         .client
-        .create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
+        .create_gift(&f.sender, &f.recipient, &MIN_DEPOSIT_AMOUNT, &unlock_time);
 
     // Manually mark the gift as claimed by writing storage inside the contract context.
     let claimed_gift = crate::gift::types::Gift {
         sender: f.sender.clone(),
         recipient: f.recipient.clone(),
-        amount: 500_000,
+        amount: MIN_DEPOSIT_AMOUNT,
         unlock_time,
         is_claimed: true,
     };
