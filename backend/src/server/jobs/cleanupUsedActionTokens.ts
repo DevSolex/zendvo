@@ -10,8 +10,9 @@ import { lt } from "drizzle-orm";
  * JTI record is no longer needed.  This job keeps the table from growing
  * unboundedly.
  *
- * Schedule: run every 15 minutes (or at least as often as ACTION_TOKEN_EXPIRY,
- * which is currently 10 minutes).
+ * Schedule: run every 5 minutes. Records only need to survive until their
+ * token's exp timestamp; cleaning up more frequently than the token lifetime
+ * (ACTION_TOKEN_EXPIRY = 10 minutes) keeps the table small.
  */
 export async function cleanupExpiredUsedActionTokens(): Promise<number> {
   try {

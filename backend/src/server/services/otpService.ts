@@ -256,34 +256,45 @@ export async function storeOTP(userId: string, otp: string, action?: string) {
   const storedValue = `${salt}:${hash}`;
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-  // Invalidate any existing unused OTPs for this user scoped to the same
-  // action (or all general OTPs when no action is provided).
-  await db
-    .update(emailVerifications)
-    .set({ isUsed: true })
-    .where(
-      and(
-        eq(emailVerifications.userId, userId),
-        eq(emailVerifications.isUsed, false),
-        action
-          ? eq(emailVerifications.action, action)
-          : sql`${emailVerifications.action} IS NULL`,
-      ),
-    );
+  // Wrap in a SERIALIZABLE transaction so that concurrent calls for the
+  // same (userId, action) pair cannot both observe zero active rows and each
+  // insert a second unused OTP.  The serializable isolation level causes one
+  // of the concurrent transactions to abort with a serialization failure, at
+  // which point the caller can retry (the rate-limiter already caps retries).
+  const newVerification = await db.transaction(
+    async (tx) => {
+      // Invalidate existing unused OTPs scoped to the same action.
+      await tx
+        .update(emailVerifications)
+        .set({ isUsed: true })
+        .where(
+          and(
+            eq(emailVerifications.userId, userId),
+            eq(emailVerifications.isUsed, false),
+            action
+              ? eq(emailVerifications.action, action)
+              : sql`${emailVerifications.action} IS NULL`,
+          ),
+        );
+
+      const [inserted] = await tx
+        .insert(emailVerifications)
+        .values({
+          userId,
+          otpHash: storedValue,
+          expiresAt,
+          attempts: 0,
+          isUsed: false,
+          action: action ?? null,
+        })
+        .returning();
+
+      return inserted;
+    },
+    { isolationLevel: "serializable" },
+  );
 
   logOTPEvent(AuditEventType.OTP_GENERATED, userId);
-
-  const [newVerification] = await db
-    .insert(emailVerifications)
-    .values({
-      userId,
-      otpHash: storedValue,
-      expiresAt,
-      attempts: 0,
-      isUsed: false,
-      action: action ?? null,
-    })
-    .returning();
 
   await db
     .update(users)
@@ -294,10 +305,15 @@ export async function storeOTP(userId: string, otp: string, action?: string) {
 }
 
 export async function verifyOTP(userId: string, otp: string, ipAddress?: string) {
+  // Explicitly exclude action-scoped OTPs — those must only be consumed by the
+  // action-otp/verify endpoint.  Without this guard a privileged OTP (e.g.
+  // issued for delete_account) could be consumed by the general email/phone
+  // verification flow and its action token would never be issued.
   const verification = await db.query.emailVerifications.findFirst({
     where: and(
       eq(emailVerifications.userId, userId),
       eq(emailVerifications.isUsed, false),
+      sql`${emailVerifications.action} IS NULL`,
     ),
     orderBy: [desc(emailVerifications.createdAt)],
   });

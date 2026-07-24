@@ -94,8 +94,8 @@ export const usedActionTokens = pgTable(
     /** The JWT ID claim from the action token. */
     jti: text("jti").primaryKey(),
     /** Mirrors the token's exp claim — used by the cleanup cron. */
-    expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => {
     return [index("uat_expires_at_idx").on(table.expiresAt)];

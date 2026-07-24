@@ -32,6 +32,21 @@ jest.mock("@/lib/db", () => ({
         returning: jest.fn(() => Promise.resolve([{ id: "1" }, { id: "2" }])),
       })),
     })),
+    transaction: jest.fn(async (fn: (tx: unknown) => unknown) => {
+      const tx = {
+        update: jest.fn(() => ({
+          set: jest.fn(() => ({
+            where: jest.fn(() => Promise.resolve()),
+          })),
+        })),
+        insert: jest.fn(() => ({
+          values: jest.fn(() => ({
+            returning: jest.fn(() => Promise.resolve([{ id: "ev-new" }])),
+          })),
+        })),
+      };
+      return fn(tx);
+    }),
   },
 }));
 
@@ -54,11 +69,13 @@ describe("OTP Service", () => {
   });
 
   describe("storeOTP", () => {
-    it("should store OTP and invalidate previous records", async () => {
+    it("should store OTP and invalidate previous records inside a transaction", async () => {
       await storeOTP("user-123", "123456");
 
+      // Invalidation + insertion now happen inside a serializable transaction.
+      expect(db.transaction).toHaveBeenCalled();
+      // The users table lastOtpSentAt update still runs outside the transaction.
       expect(db.update).toHaveBeenCalled();
-      expect(db.insert).toHaveBeenCalled();
     });
   });
 
