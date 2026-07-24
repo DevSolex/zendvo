@@ -19,6 +19,9 @@ import { POST as sendVerificationPost } from "./api/auth/send-verification/route
 import { POST as verifyEmailPost } from "./api/auth/verify-email/route";
 import { POST as verifyOtpPost } from "./api/auth/verify-otp/route";
 
+// Upload
+import { POST as uploadImagePost } from "./api/upload/image/route";
+
 export const apiRouter = Router();
 
 // 1. Authentication routes
@@ -38,4 +41,7 @@ apiRouter.post("/api/auth/send-phone-otp", makeExpressHandler(sendPhoneOtpPost))
 apiRouter.post("/api/auth/send-verification", makeExpressHandler(sendVerificationPost));
 apiRouter.post("/api/auth/verify-email", makeExpressHandler(verifyEmailPost));
 apiRouter.post("/api/auth/verify-otp", makeExpressHandler(verifyOtpPost));
+
+// 2. Upload routes
+apiRouter.post("/api/upload/image", makeExpressHandler(uploadImagePost));
 
