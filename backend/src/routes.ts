@@ -1,12 +1,12 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { makeExpressHandler } from "./adapter";
 
-// Middleware to limit request size for uploads
+// Streaming middleware to limit upload request size to 10MB without relying solely on Content-Length
 const limitUploadSize = (req: Request, res: Response, next: NextFunction) => {
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
   const contentLength = parseInt(req.headers['content-length'] || '0', 10);
-  
-  if (contentLength > MAX_FILE_SIZE) {
+
+  if (!isNaN(contentLength) && contentLength > MAX_FILE_SIZE) {
     return res.status(413).json({
       type: "about:blank",
       title: "Payload Too Large",
@@ -14,7 +14,28 @@ const limitUploadSize = (req: Request, res: Response, next: NextFunction) => {
       detail: "Request body exceeds the 10MB limit."
     });
   }
-  
+
+  let receivedBytes = 0;
+  let isOverLimit = false;
+
+  const onData = (chunk: Buffer) => {
+    receivedBytes += chunk.length;
+    if (receivedBytes > MAX_FILE_SIZE && !isOverLimit) {
+      isOverLimit = true;
+      req.removeListener('data', onData);
+      req.destroy();
+      if (!res.headersSent) {
+        return res.status(413).json({
+          type: "about:blank",
+          title: "Payload Too Large",
+          status: 413,
+          detail: "Request body exceeds the 10MB limit."
+        });
+      }
+    }
+  };
+
+  req.on('data', onData);
   next();
 };
 
@@ -63,4 +84,5 @@ apiRouter.post("/api/auth/verify-otp", makeExpressHandler(verifyOtpPost));
 
 // 2. Upload routes
 apiRouter.post("/api/upload/image", limitUploadSize, makeExpressHandler(uploadImagePost));
+
 
