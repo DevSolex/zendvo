@@ -43,6 +43,10 @@ const limitUploadSize = (req: Request, res: Response, next: NextFunction) => {
 import { POST as authPost } from "./api/auth/route";
 // Dashboard
 import { GET as dashboardStatsGet } from "./api/dashboard/stats/route";
+import { GET as dashboardGiftsGet } from "./api/dashboard/gifts/route";
+// Gifts
+import { POST as giftRedeemPost } from "./api/gifts/redeem/route";
+import { POST as giftAppreciatePost } from "./api/gifts/appreciate/route";
 import { POST as forgotPasswordPost } from "./api/auth/forgot-password/route";
 import { POST as loginPost } from "./api/auth/login/route";
 import { POST as logoutPost } from "./api/auth/logout/route";
