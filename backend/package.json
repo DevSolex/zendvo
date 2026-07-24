@@ -33,6 +33,11 @@
     "stripe": "^20.2.0",
     "zod": "^4.3.6"
   },
+  "pnpm": {
+    "overrides": {
+      "jest-mock": "^30.0.0"
+    }
+  },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@types/bcryptjs": "^2.4.6",
