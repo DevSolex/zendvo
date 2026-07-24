@@ -6,13 +6,17 @@ exports.isFileSizeValid = isFileSizeValid;
 const client_s3_1 = require("@aws-sdk/client-s3");
 const nanoid_1 = require("nanoid");
 // S3 Client configuration
-const s3Client = new client_s3_1.S3Client({
+const s3ClientConfig = {
     region: process.env.AWS_REGION || "us-east-1",
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
-    },
-});
+};
+// Only include credentials if both are present, otherwise use default credential chain
+if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    s3ClientConfig.credentials = {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    };
+}
+const s3Client = new client_s3_1.S3Client(s3ClientConfig);
 const S3_BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || "zendvo-uploads";
 /**
  * Upload a file buffer to S3 and return the public URL
@@ -30,8 +34,6 @@ async function uploadToS3(fileBuffer, fileName, contentType) {
         Key: uniqueFileName,
         Body: fileBuffer,
         ContentType: contentType,
-        // Make the file publicly readable
-        ACL: "public-read",
     };
     try {
         await s3Client.send(new client_s3_1.PutObjectCommand(uploadParams));

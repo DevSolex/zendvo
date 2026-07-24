@@ -23,11 +23,11 @@ AWS_S3_BUCKET_NAME=zendvo-uploads
 ### S3 Bucket Setup
 
 1. Create an S3 bucket in your AWS account
-2. Configure the bucket with public read access for the uploaded files
+2. Configure the bucket with public read access for the uploaded files via bucket policy or CDN
 3. Set up CORS if needed for your frontend domain
 4. Ensure the IAM user/role has the following permissions:
    - `s3:PutObject`
-   - `s3:PutObjectAcl`
+5. For IAM role/instance profile deployments, omit AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to use default credential chain
 
 ### Security Notes
 

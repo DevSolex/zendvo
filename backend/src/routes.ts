@@ -1,5 +1,22 @@
-import { Router } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { makeExpressHandler } from "./adapter";
+
+// Middleware to limit request size for uploads
+const limitUploadSize = (req: Request, res: Response, next: NextFunction) => {
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  
+  if (contentLength > MAX_FILE_SIZE) {
+    return res.status(413).json({
+      type: "about:blank",
+      title: "Payload Too Large",
+      status: 413,
+      detail: "Request body exceeds the 10MB limit."
+    });
+  }
+  
+  next();
+};
 
 // Auth
 import { POST as authPost } from "./api/auth/route";
@@ -45,5 +62,5 @@ apiRouter.post("/api/auth/verify-email", makeExpressHandler(verifyEmailPost));
 apiRouter.post("/api/auth/verify-otp", makeExpressHandler(verifyOtpPost));
 
 // 2. Upload routes
-apiRouter.post("/api/upload/image", makeExpressHandler(uploadImagePost));
+apiRouter.post("/api/upload/image", limitUploadSize, makeExpressHandler(uploadImagePost));
 
