@@ -1,5 +1,6 @@
 use soroban_sdk::{contracttype, Address};
 
+
 /// A time-locked gift record stored on-chain.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]

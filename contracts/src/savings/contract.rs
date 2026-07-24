@@ -4,9 +4,6 @@ use crate::{
     core::{errors::ContractError, utils::MIN_DEPOSIT_AMOUNT},
     savings::{events, storage},
 };
-use crate::core::errors::ContractError;
-use crate::savings::events;
-use crate::savings::storage;
 use crate::savings::types::DataKey;
 
 #[contract]

@@ -1,12 +1,11 @@
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env};
 
 use crate::{
-    core::{errors::ContractError, utils::MIN_DEPOSIT_AMOUNT},
-    core::{errors::ContractError, events::emit_initialized},
+    core::{errors::ContractError, events::emit_initialized, utils::MIN_DEPOSIT_AMOUNT},
     gift::{
-        events::{emit_gift_cancelled, emit_gift_created},
+        events::{self, emit_gift_cancelled, emit_gift_created},
         storage::{
-            get_gift_counter, get_token_address, remove_gift, set_gift, set_gift_counter,
+            self, get_gift_counter, get_token_address, remove_gift, set_gift, set_gift_counter,
         },
         types::{DataKey, Gift},
     },
@@ -190,5 +189,43 @@ impl GiftContract {
         env.deployer().update_current_contract_wasm(new_wasm_hash);
 
         Ok(())
+    }
+
+    /// Allows the sender to redirect a pending (unclaimed) gift to a new
+    /// recipient address. This is useful when the original recipient has lost
+    /// access to their Stellar wallet.
+    ///
+    /// # Panics
+    /// - If the caller is not the original `sender`.
+    /// - If the gift has already been claimed.
+    pub fn update_recipient(
+        env: Env,
+        sender: Address,
+        gift_id: u64,
+        new_recipient: Address,
+    ) {
+        sender.require_auth();
+
+        let mut gift = storage::get_gift(&env, gift_id);
+
+        if gift.sender != sender {
+            panic!("only the sender can update the recipient");
+        }
+
+        if gift.is_claimed {
+            panic!("cannot update recipient of an already claimed gift");
+        }
+
+        let old_recipient = gift.recipient;
+        gift.recipient = new_recipient.clone();
+        storage::set_gift(&env, gift_id, &gift);
+
+        events::emit_recipient_updated(
+            &env,
+            gift_id,
+            &sender,
+            &old_recipient,
+            &new_recipient,
+        );
     }
 }
