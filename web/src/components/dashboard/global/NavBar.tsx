@@ -18,7 +18,6 @@ export const NavBar = ({ onMenuToggle }: NavBarProps) => {
     "/dashboard": "Dashboard",
     "/dashboard/sender": "Sender",
     "/dashboard/recipient": "Recipient",
-    "/dashboard/gifts": "Send Gift",
     "/dashboard/wallet": "Wallet",
   };
 

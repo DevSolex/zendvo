@@ -3,6 +3,8 @@ import { makeExpressHandler } from "./adapter";
 
 // Auth
 import { POST as authPost } from "./api/auth/route";
+// Dashboard
+import { GET as dashboardStatsGet } from "./api/dashboard/stats/route";
 import { POST as forgotPasswordPost } from "./api/auth/forgot-password/route";
 import { POST as loginPost } from "./api/auth/login/route";
 import { POST as logoutPost } from "./api/auth/logout/route";

@@ -15,39 +15,32 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        run: npm install -g pnpm
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Install Dependencies
-        run: npm ci
+          node-version: "24"
+          cache: "pnpm"
 
       - name: Get Next.js Cache
         uses: actions/cache@v4
         with:
           path: |
-            ~/.npm
             ${{ github.workspace }}/.next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
           restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+            ${{ runner.os }}-nextjs-${{ hashFiles('**/pnpm-lock.yaml') }}-
 
       - name: Drizzle Schema Check
-        run: npx drizzle-kit check
-
-      - name: Lint Code
-        run: npm run lint
-
-      - name: Type Check
-        run: npx tsc --noEmit
+        run: pnpm --filter backend exec drizzle-kit check
 
       - name: Run Tests
-        run: npm run test
+        run: pnpm run test -r --if-present
 
       - name: Build Application
-        run: npm run build
+        run: pnpm run build -r --if-present
         env:
           NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}

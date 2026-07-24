@@ -1,0 +1,48 @@
+name: Smart Contracts CI
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/smart-contracts-ci.yml'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/smart-contracts-ci.yml'
+
+jobs:
+  build-and-test:
+    name: Build and Test Soroban Contract
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./contracts
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+          components: clippy, rustfmt
+
+      - name: Cache Cargo Registry
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./contracts"
+
+      - name: Check Formatting
+        run: cargo fmt -- --check
+
+      - name: Clippy Lints
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+      - name: Run Tests
+        run: cargo test --locked
+
+      - name: Build Wasm
+        run: cargo build --locked --target wasm32v1-none --release

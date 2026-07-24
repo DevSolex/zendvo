@@ -1,11 +1,4 @@
-
-
-
-
-
-
 export async function register() {
-  
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { checkMigrationStatus } = await import("./lib/db/migration-checker");
 
@@ -19,21 +12,37 @@ export async function register() {
       } else {
         console.error(status.message);
         console.error(
-          "⚠️  Server will continue, but database operations may fail."
+          "⚠️  Server will continue, but database operations may fail.",
         );
         console.error(
-          "   Run 'npm run db:migrate' or 'npx drizzle-kit push' to sync the database."
+          "   Run 'npm run db:migrate' or 'npx drizzle-kit push' to sync the database.",
         );
 
-        
-        if (process.env.NODE_ENV === "production" && process.env.STRICT_MIGRATION_CHECK === "true") {
+        if (
+          process.env.NODE_ENV === "production" &&
+          process.env.STRICT_MIGRATION_CHECK === "true"
+        ) {
           console.error("❌ STRICT_MIGRATION_CHECK enabled. Halting startup.");
           process.exit(1);
         }
       }
     } catch (error) {
       console.error("❌ Failed to check migration status:", error);
-      console.error("⚠️  Server will continue, but this should be investigated.");
+      console.error(
+        "⚠️  Server will continue, but this should be investigated.",
+      );
     }
+
+    // --- CRON JOB HERE ---
+    try {
+      console.log("⏰ Initializing background task schedulers...");
+      const { startGiftReleaseJob } = await import("./server/jobs/giftReleaseJob");
+      
+      startGiftReleaseJob();
+      console.log("🚀 Scheduled Gift Release Cron Job successfully running.");
+    } catch (cronError) {
+      console.error("❌ Failed to initialize background cron jobs:", cronError);
+    }
+    // --------------------------------
   }
 }

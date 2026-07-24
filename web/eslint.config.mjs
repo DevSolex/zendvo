@@ -6,12 +6,13 @@ import jestPlugin from "eslint-plugin-jest";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  
-  globalIgnores([
-    
-    ".next__tests__*.test.{js,jsx,ts,tsx}",
-      "**/*.spec.{js,jsx,ts,tsx}",
-    ],
+
+  // Ignore build output and Next.js internals
+  globalIgnores([".next/**", "dist/**"]),
+
+  // Jest rules for test files
+  {
+    files: ["**/__tests__/**/*.{js,jsx,ts,tsx}", "**/*.test.{js,jsx,ts,tsx}", "**/*.spec.{js,jsx,ts,tsx}"],
     ...jestPlugin.configs["flat/recommended"],
     rules: {
       ...jestPlugin.configs["flat/recommended"].rules,

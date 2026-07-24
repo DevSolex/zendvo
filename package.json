@@ -1,21 +1,25 @@
 {
   "name": "zendvo-monorepo",
   "private": true,
-  "workspaces": [
-    "web",
-    "backend"
-  ],
   "scripts": {
-    "dev:web": "npm run dev --workspace=web",
-    "dev:backend": "npm run dev --workspace=backend",
-    "dev": "concurrently \"npm run dev:web\" \"npm run dev:backend\"",
-    "build:web": "npm run build --workspace=web",
-    "build:backend": "npm run build --workspace=backend",
-    "db:migrate": "npm run db:migrate --workspace=backend",
-    "db:push": "npm run db:push --workspace=backend",
-    "db:check": "npm run db:check --workspace=backend"
+    "dev:web": "pnpm --filter web run dev",
+    "dev:backend": "pnpm --filter backend run dev",
+    "dev": "concurrently \"pnpm run dev:web\" \"pnpm run dev:backend\"",
+    "build": "pnpm --filter web run build",
+    "build:web": "pnpm --filter web run build",
+    "build:backend": "pnpm --filter backend run build",
+    "lint": "pnpm --filter web run lint",
+    "test": "pnpm --filter backend run test",
+    "tsc": "pnpm --filter web run tsc && pnpm --filter backend run tsc",
+    "db:migrate": "pnpm --filter backend run db:migrate",
+    "db:push": "pnpm --filter backend run db:push",
+    "db:check": "pnpm --filter backend run db:check"
   },
   "devDependencies": {
+    "@types/node-cron": "^3.0.11",
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "node-cron": "^4.5.0"
   }
 }

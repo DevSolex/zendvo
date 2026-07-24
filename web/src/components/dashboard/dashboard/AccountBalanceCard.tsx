@@ -1,7 +1,6 @@
 import {
   BankIcon,
   CoinIcon,
-  GiftSentIcon,
   MoneyBag,
   WithdrawalIcon,
 } from "@/assets/svg";
@@ -34,12 +33,6 @@ export const AccountBalanceCard = () => {
         </div>
         <div className="overflow-x-auto">
           <div className="flex items-center justify-between gap-6 min-w-max">
-            <div className="flex items-center flex-col gap-2">
-              <div className="bg-[#5A42DE] size-10 rounded-xl flex justify-center items-center">
-                <GiftSentIcon />
-              </div>
-              <p className="text-sm leading-5 text-[#18181B] whitespace-nowrap">Send Gift</p>
-            </div>
             <div className="flex items-center flex-col gap-2">
               <div className="bg-[#5A42DE] size-10 rounded-xl flex justify-center items-center">
                 <BankIcon />

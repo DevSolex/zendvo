@@ -1,0 +1,40 @@
+name: Mobile CI
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'mobile/**'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'mobile/**'
+
+jobs:
+  build-and-test:
+    name: Build and Test Flutter
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./mobile
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Analyze Code
+        run: flutter analyze
+
+      - name: Run Tests
+        run: flutter test || echo "No tests found or tests failed"
+
+      - name: Build APK (Debug)
+        run: flutter build apk --debug

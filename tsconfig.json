@@ -1,0 +1,30 @@
+{
+  // Root-level tsconfig — used by `npx tsc --noEmit` in CI.
+  // Type-checks the backend source. The web workspace is type-checked
+  // by Next.js during `npm run build`.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "baseUrl": "./backend",
+    "paths": {
+      "@/app/api/*": ["./src/api/*"],
+      "@/*": ["./src/*"]
+    },
+    "types": ["node", "jest"]
+  },
+  "include": [
+    "backend/src/**/*",
+    "backend/__tests__/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "backend/dist",
+    "web"
+  ]
+}

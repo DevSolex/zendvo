@@ -186,15 +186,17 @@ export const SideBar = ({ isOpen, onClose }: SideBarProps) => {
               renderNavLink(item, { compact: true, applyAriaCurrent }),
             )}
 
-          {}
           <div className="flex items-center justify-between px-4 py-3 text-gray-600">
             <div className="flex items-center gap-3">
               <MoonIcon />
               <span className="text-sm font-medium">Dark Mode</span>
             </div>
-            <button
+            <div
+              role="switch"
+              aria-checked={darkMode}
+              tabIndex={0}
               onClick={() => setDarkMode(!darkMode)}
-              className={`relative w-11 h-6 rounded-full transition-colors ${
+              className={`relative cursor-pointer w-11 h-6 rounded-full transition-colors shrink-0 ${
                 darkMode ? "bg-[#5A42DE]" : "bg-gray-200"
               }`}
             >
@@ -203,7 +205,7 @@ export const SideBar = ({ isOpen, onClose }: SideBarProps) => {
                   darkMode ? "translate-x-5" : "translate-x-0"
                 }`}
               />
-            </button>
+            </div>
           </div>
 
           {generalMenuItems

@@ -1,0 +1,11 @@
+packages:
+  - "web"
+  - "backend"
+
+minimumReleaseAgeExclude:
+  - "electron-to-chromium"
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true

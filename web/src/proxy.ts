@@ -19,7 +19,6 @@ const PROTECTED_API_ROUTES = [
   "/api/auth/logout",
   "/api/auth/reset-password",
   "/api/auth/revoke",
-  "/api/gifts",
   "/api/dashboard",
   "/api/wallet",
 ];
@@ -68,9 +67,7 @@ export async function proxy(request: NextRequest) {
     return withAuthRateLimitHeaders(request, NextResponse.next());
   }
 
-  if (pathname.startsWith("/api/gifts/public")) {
-    return withAuthRateLimitHeaders(request, NextResponse.next());
-  }
+
 
   if (pathname.startsWith("/dashboard")) {
     const response = await handleDashboardRoute(request);
