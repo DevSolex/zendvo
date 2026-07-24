@@ -4,11 +4,13 @@ on:
   push:
     branches: [main, master, develop]
     paths:
-      - 'smart_contracts/**'
+      - 'contracts/**'
+      - '.github/workflows/smart-contracts-ci.yml'
   pull_request:
     branches: [main, master, develop]
     paths:
-      - 'smart_contracts/**'
+      - 'contracts/**'
+      - '.github/workflows/smart-contracts-ci.yml'
 
 jobs:
   build-and-test:
@@ -16,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./smart_contracts
+        working-directory: ./contracts
 
     steps:
       - name: Checkout Repository
@@ -25,22 +27,22 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32v1-none
           components: clippy, rustfmt
 
       - name: Cache Cargo Registry
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "./smart_contracts"
+          workspaces: "./contracts"
 
       - name: Check Formatting
         run: cargo fmt -- --check
 
       - name: Clippy Lints
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
       - name: Run Tests
-        run: cargo test
+        run: cargo test --locked
 
       - name: Build Wasm
-        run: cargo build --target wasm32-unknown-unknown --release
+        run: cargo build --locked --target wasm32v1-none --release

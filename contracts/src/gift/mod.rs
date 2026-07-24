@@ -1,5 +1,8 @@
 // Module declarations for the gift contract feature
 pub mod contract;
+pub mod events;
 pub mod storage;
 pub mod types;
-pub mod events;
+
+#[cfg(test)]
+mod tests;
