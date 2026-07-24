@@ -8,16 +8,17 @@
  * Flow:
  *   1. Client sends { code, action } in the request body (authenticated).
  *   2. Handler resolves the caller's user ID from their Bearer access token.
- *   3. Retrieves the most-recent, un-used OTP for that user from the DB.
- *   4. Verifies expiry, action-type match, and HMAC hash.
- *   5. Deletes/marks the OTP used (prevents replay).
+ *   3. Retrieves the most-recent, un-used OTP for that user from the DB,
+ *      scoped to the requested action to prevent cross-action token minting.
+ *   4. Verifies expiry and HMAC hash.
+ *   5. Atomically deletes the OTP record (prevents replay and race conditions).
  *   6. Issues and returns a 10-minute action JWT.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users, emailVerifications } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, lt, sql } from "drizzle-orm";
 import { verifyOTPHash } from "@/server/services/otpService";
 import { generateActionToken, type ActionType } from "@/lib/tokens";
 import { getAuthPayload } from "@/lib/auth-session";
@@ -145,11 +146,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── 5. Retrieve the active OTP record ─────────────────────────────────
+    // ── 5. Retrieve the active OTP record (scoped to the requested action) ──
     const verification = await db.query.emailVerifications.findFirst({
       where: and(
         eq(emailVerifications.userId, userId),
         eq(emailVerifications.isUsed, false),
+        eq(emailVerifications.action, action),
       ),
       orderBy: [desc(emailVerifications.createdAt)],
     });
@@ -198,20 +200,43 @@ export async function POST(request: NextRequest) {
     }
 
     if (!isValid) {
-      // Increment attempt counter but keep the record so the user can retry
-      await db
+      // Atomically increment the attempt counter at the DB level to prevent
+      // concurrent requests from both reading the same stale value and each
+      // writing the same incremented count, which would allow bypassing the cap.
+      // The WHERE clause also guards the cap itself: if another concurrent
+      // request already pushed attempts to 5, this update matches zero rows
+      // and we return the cap-exceeded response instead.
+      const incremented = await db
         .update(emailVerifications)
-        .set({ attempts: verification.attempts + 1 })
-        .where(eq(emailVerifications.id, verification.id));
+        .set({ attempts: sql`attempts + 1` })
+        .where(
+          and(
+            eq(emailVerifications.id, verification.id),
+            lt(emailVerifications.attempts, 5),
+          ),
+        )
+        .returning({ attempts: emailVerifications.attempts });
+
+      if (incremented.length === 0) {
+        // Another concurrent request hit the cap first.
+        return createProblemDetails(
+          "about:blank",
+          "Too Many Requests",
+          429,
+          "Maximum verification attempts exceeded. Please request a new code.",
+        );
+      }
+
+      const newAttempts = incremented[0].attempts;
+      const remaining = 5 - newAttempts;
 
       logOTPEvent(AuditEventType.OTP_VERIFIED_FAILED, userId, {
         context: "action-otp-verify",
         action,
-        attemptNumber: verification.attempts + 1,
-        remainingAttempts: 5 - (verification.attempts + 1),
+        attemptNumber: newAttempts,
+        remainingAttempts: remaining,
       });
 
-      const remaining = 5 - (verification.attempts + 1);
       return NextResponse.json(
         {
           success: false,
@@ -221,10 +246,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── 9. Consume the OTP (mark used / delete to prevent replay) ─────────
-    await db
+    // ── 9. Atomically consume the OTP — prevents replay and double-mint ───
+    // Use a conditional DELETE so that only one of two concurrent valid
+    // requests can actually remove the record.  If another request already
+    // deleted it, `deleted` will be an empty array and we reject this one.
+    const deleted = await db
       .delete(emailVerifications)
-      .where(eq(emailVerifications.id, verification.id));
+      .where(
+        and(
+          eq(emailVerifications.id, verification.id),
+          eq(emailVerifications.isUsed, false),
+        ),
+      )
+      .returning({ id: emailVerifications.id });
+
+    if (deleted.length === 0) {
+      // Race: a concurrent request consumed this OTP first.
+      return createProblemDetails(
+        "about:blank",
+        "Bad Request",
+        400,
+        "Verification code has already been used. Please request a new one.",
+      );
+    }
 
     logOTPEvent(AuditEventType.OTP_VERIFIED_SUCCESS, userId, {
       context: "action-otp-verify",

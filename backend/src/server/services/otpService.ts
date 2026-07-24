@@ -251,11 +251,13 @@ async function sendSMSViaProvider(phoneNumber: string, message: string): Promise
   }
 }
 
-export async function storeOTP(userId: string, otp: string) {
+export async function storeOTP(userId: string, otp: string, action?: string) {
   const { salt, hash } = hashOTP(otp);
   const storedValue = `${salt}:${hash}`;
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
+  // Invalidate any existing unused OTPs for this user scoped to the same
+  // action (or all general OTPs when no action is provided).
   await db
     .update(emailVerifications)
     .set({ isUsed: true })
@@ -263,6 +265,9 @@ export async function storeOTP(userId: string, otp: string) {
       and(
         eq(emailVerifications.userId, userId),
         eq(emailVerifications.isUsed, false),
+        action
+          ? eq(emailVerifications.action, action)
+          : sql`${emailVerifications.action} IS NULL`,
       ),
     );
 
@@ -276,6 +281,7 @@ export async function storeOTP(userId: string, otp: string) {
       expiresAt,
       attempts: 0,
       isUsed: false,
+      action: action ?? null,
     })
     .returning();
 

@@ -1,4 +1,7 @@
 import * as jose from "jose";
+import { db } from "@/lib/db";
+import { usedActionTokens } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 export type UserRole = "Sender" | "Recipient" | "Admin";
 
 /**
@@ -15,8 +18,15 @@ export type ActionType =
 const ACCESS_TOKEN_SECRET = process.env.JWT_SECRET || "fallback_access_secret";
 const REFRESH_TOKEN_SECRET =
   process.env.JWT_REFRESH_SECRET || "fallback_refresh_secret";
-const ACTION_TOKEN_SECRET =
-  process.env.ACTION_TOKEN_SECRET || "fallback_action_token_secret";
+
+const _ACTION_TOKEN_SECRET = process.env.ACTION_TOKEN_SECRET;
+if (!_ACTION_TOKEN_SECRET) {
+  throw new Error(
+    "ACTION_TOKEN_SECRET environment variable is required. " +
+      "Generate one with: openssl rand -hex 64",
+  );
+}
+const ACTION_TOKEN_SECRET: string = _ACTION_TOKEN_SECRET;
 
 const ACCESS_TOKEN_EXPIRY = "15m";
 const REFRESH_TOKEN_EXPIRY = "7d";
@@ -107,6 +117,8 @@ export interface ActionTokenPayload {
   userId: string;
   /** The single sensitive action the frontend is authorised to execute. */
   action: ActionType;
+  /** JWT ID — used server-side to enforce single-use semantics. */
+  jti?: string;
   /** Standard JWT claim — populated automatically by the signing call. */
   iat?: number;
   exp?: number;
@@ -130,16 +142,49 @@ export async function generateActionToken(
 }
 
 /**
- * Verifies an action token and returns its payload, or `null` if invalid /
- * expired.
+ * Verifies an action token and returns its payload, or `null` if invalid,
+ * expired, or already consumed.
+ *
+ * Single-use enforcement: on first use the caller is responsible for
+ * persisting the jti via `consumeActionToken()`.  This function only
+ * *reads* the used-jti store to reject tokens that were already consumed.
  */
 export async function verifyActionToken(
   token: string,
 ): Promise<ActionTokenPayload | null> {
   try {
     const { payload } = await jose.jwtVerify(token, encodedActionTokenSecret);
-    return payload as unknown as ActionTokenPayload;
+    const typedPayload = payload as unknown as ActionTokenPayload;
+
+    if (typedPayload.jti) {
+      const alreadyUsed = await db.query.usedActionTokens.findFirst({
+        where: eq(usedActionTokens.jti, typedPayload.jti),
+        columns: { jti: true },
+      });
+      if (alreadyUsed) return null;
+    }
+
+    return typedPayload;
   } catch {
     return null;
   }
+}
+
+/**
+ * Marks an action token as consumed so it cannot be replayed.
+ * Must be called by the consuming endpoint (e.g. DELETE /api/users/account)
+ * immediately after `verifyActionToken` succeeds, before performing the
+ * privileged action.
+ */
+export async function consumeActionToken(
+  payload: ActionTokenPayload,
+): Promise<void> {
+  if (!payload.jti || !payload.exp) return;
+  await db
+    .insert(usedActionTokens)
+    .values({
+      jti: payload.jti,
+      expiresAt: new Date(payload.exp * 1000),
+    })
+    .onConflictDoNothing(); // idempotent — safe if called twice in a race
 }

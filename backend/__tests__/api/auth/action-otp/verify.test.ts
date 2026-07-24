@@ -25,8 +25,12 @@ import * as authSession from "@/lib/auth-session";
 
 const mockFindFirstUsers = jest.fn();
 const mockFindFirstVerifications = jest.fn();
-const mockDeleteWhere = jest.fn();
-const mockUpdateSetWhere = jest.fn();
+const mockDeleteReturning = jest.fn();
+const mockUpdateReturning = jest.fn();
+
+// Default return values (overridden per-test where needed)
+// delete(...).where(...).returning() → [{ id: "verification-1" }]  (1 row deleted)
+// update(...).set(...).where(...).returning() → [{ attempts: 1 }]   (1 row updated)
 
 jest.mock("@/lib/db", () => ({
   db: {
@@ -36,8 +40,18 @@ jest.mock("@/lib/db", () => ({
         findFirst: (...args: unknown[]) => mockFindFirstVerifications(...args),
       },
     },
-    delete: jest.fn(() => ({ where: mockDeleteWhere })),
-    update: jest.fn(() => ({ set: jest.fn(() => ({ where: mockUpdateSetWhere })) })),
+    delete: jest.fn(() => ({
+      where: jest.fn(() => ({
+        returning: mockDeleteReturning,
+      })),
+    })),
+    update: jest.fn(() => ({
+      set: jest.fn(() => ({
+        where: jest.fn(() => ({
+          returning: mockUpdateReturning,
+        })),
+      })),
+    })),
   },
 }));
 
@@ -45,6 +59,11 @@ jest.mock("drizzle-orm", () => ({
   eq: jest.fn((_col: unknown, _val: unknown) => ({})),
   and: jest.fn((..._args: unknown[]) => ({})),
   desc: jest.fn((_col: unknown) => ({})),
+  lt: jest.fn((_col: unknown, _val: unknown) => ({})),
+  sql: Object.assign(
+    jest.fn((_strings: TemplateStringsArray, ..._values: unknown[]) => ({})),
+    { raw: jest.fn((_s: string) => ({})) },
+  ),
 }));
 
 jest.mock("@/lib/db/schema", () => ({
@@ -52,6 +71,7 @@ jest.mock("@/lib/db/schema", () => ({
   emailVerifications: {
     userId: "userId",
     isUsed: "isUsed",
+    action: "action",
     createdAt: "createdAt",
     id: "id",
     attempts: "attempts",
@@ -121,6 +141,7 @@ const ACTIVE_OTP_RECORD = {
   expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes in future
   attempts: 0,
   isUsed: false,
+  action: "delete_account",
   createdAt: new Date(),
 };
 
@@ -145,8 +166,12 @@ describe("POST /api/auth/action-otp/verify", () => {
     (otpService.verifyOTPHash as jest.Mock).mockReturnValue(true);
     // Default: active user
     mockFindFirstUsers.mockResolvedValue(ACTIVE_USER);
-    // Default: active OTP record
+    // Default: active OTP record (scoped to the action in the request)
     mockFindFirstVerifications.mockResolvedValue(ACTIVE_OTP_RECORD);
+    // Default: successful atomic delete (1 row consumed — no race)
+    mockDeleteReturning.mockResolvedValue([{ id: "verification-1" }]);
+    // Default: successful atomic increment (1 row updated, attempts now = 1)
+    mockUpdateReturning.mockResolvedValue([{ attempts: 1 }]);
   });
 
   // ── Happy path ─────────────────────────────────────────────────────────────
@@ -175,9 +200,15 @@ describe("POST /api/auth/action-otp/verify", () => {
       { authorization: "Bearer valid-access-token" },
     );
 
+    // OTP record scoped to withdraw_funds
+    mockFindFirstVerifications.mockResolvedValue({
+      ...ACTIVE_OTP_RECORD,
+      action: "withdraw_funds",
+    });
+
     await POST(request);
 
-    expect(mockDeleteWhere).toHaveBeenCalled();
+    expect(mockDeleteReturning).toHaveBeenCalled();
   });
 
   it("accepts all valid action types", async () => {
@@ -190,6 +221,11 @@ describe("POST /api/auth/action-otp/verify", () => {
     ];
 
     for (const action of validActions) {
+      mockFindFirstVerifications.mockResolvedValue({
+        ...ACTIVE_OTP_RECORD,
+        action,
+      });
+
       const request = makeRequest(
         { code: "654321", action },
         { authorization: "Bearer valid-access-token" },
@@ -385,8 +421,10 @@ describe("POST /api/auth/action-otp/verify", () => {
 
     expect(response.status).toBe(400);
     expect(data.detail).toContain("expired");
-    // Should delete the expired record
-    expect(mockDeleteWhere).toHaveBeenCalled();
+    // The expired cleanup path calls db.delete(...).where(...) without .returning()
+    // so we verify db.delete was called at all.
+    const { db: mockDb } = jest.requireMock("@/lib/db");
+    expect(mockDb.delete).toHaveBeenCalled();
   });
 
   it("returns 429 when attempt limit for the current OTP record is already reached", async () => {
@@ -407,7 +445,7 @@ describe("POST /api/auth/action-otp/verify", () => {
 
   // ── Incorrect code ─────────────────────────────────────────────────────────
 
-  it("returns 400 and increments attempts when the code does not match", async () => {
+  it("returns 400 and atomically increments attempts when the code does not match", async () => {
     (otpService.verifyOTPHash as jest.Mock).mockReturnValue(false);
 
     const request = makeRequest(
@@ -422,9 +460,9 @@ describe("POST /api/auth/action-otp/verify", () => {
     expect(data.success).toBe(false);
     expect(data.error).toContain("Invalid verification code");
     // Should NOT delete the OTP record — the user can retry
-    expect(mockDeleteWhere).not.toHaveBeenCalled();
-    // Should increment the attempt counter
-    expect(mockUpdateSetWhere).toHaveBeenCalled();
+    expect(mockDeleteReturning).not.toHaveBeenCalled();
+    // Should atomically increment the attempt counter
+    expect(mockUpdateReturning).toHaveBeenCalled();
   });
 
   it("reports remaining attempts count accurately in the error message", async () => {
@@ -433,6 +471,8 @@ describe("POST /api/auth/action-otp/verify", () => {
       ...ACTIVE_OTP_RECORD,
       attempts: 3, // 3 used → 1 remaining after this failure
     });
+    // After atomic increment, DB returns attempts = 4
+    mockUpdateReturning.mockResolvedValue([{ attempts: 4 }]);
 
     const request = makeRequest(
       { code: "000000", action: "delete_account" },
@@ -444,5 +484,56 @@ describe("POST /api/auth/action-otp/verify", () => {
 
     expect(response.status).toBe(400);
     expect(data.error).toContain("1 attempt remaining");
+  });
+
+  // ── Race condition guards ──────────────────────────────────────────────────
+
+  it("returns 429 when a concurrent request already pushed attempts to the cap", async () => {
+    (otpService.verifyOTPHash as jest.Mock).mockReturnValue(false);
+    // Atomic increment matches 0 rows → cap was already hit by a race
+    mockUpdateReturning.mockResolvedValue([]);
+
+    const request = makeRequest(
+      { code: "000000", action: "delete_account" },
+      { authorization: "Bearer valid-access-token" },
+    );
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(429);
+  });
+
+  it("returns 400 when a concurrent request already consumed the OTP", async () => {
+    // Valid code but conditional delete matches 0 rows → already consumed
+    mockDeleteReturning.mockResolvedValue([]);
+
+    const request = makeRequest(
+      { code: "123456", action: "delete_account" },
+      { authorization: "Bearer valid-access-token" },
+    );
+
+    const response = await POST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.detail).toContain("already been used");
+  });
+
+  // ── Action scoping ─────────────────────────────────────────────────────────
+
+  it("returns 400 when no OTP exists for the requested action (cross-action replay attempt)", async () => {
+    // OTP was issued for change_password but request asks for delete_account
+    mockFindFirstVerifications.mockResolvedValue(null);
+
+    const request = makeRequest(
+      { code: "123456", action: "delete_account" },
+      { authorization: "Bearer valid-access-token" },
+    );
+
+    const response = await POST(request);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.detail).toContain("No active verification code found");
   });
 });
