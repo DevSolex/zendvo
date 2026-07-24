@@ -47,6 +47,8 @@ import { GET as dashboardGiftsGet } from "./api/dashboard/gifts/route";
 // Gifts
 import { POST as giftRedeemPost } from "./api/gifts/redeem/route";
 import { POST as giftAppreciatePost } from "./api/gifts/appreciate/route";
+// Users
+import { GET as resolveRecipientGet } from "./api/users/resolve/route";
 import { POST as forgotPasswordPost } from "./api/auth/forgot-password/route";
 import { POST as loginPost } from "./api/auth/login/route";
 import { POST as logoutPost } from "./api/auth/logout/route";
@@ -86,7 +88,16 @@ apiRouter.post("/api/auth/send-verification", makeExpressHandler(sendVerificatio
 apiRouter.post("/api/auth/verify-email", makeExpressHandler(verifyEmailPost));
 apiRouter.post("/api/auth/verify-otp", makeExpressHandler(verifyOtpPost));
 
-// 2. Upload routes
+// 2. Dashboard routes
+apiRouter.get("/api/dashboard/stats", makeExpressHandler(dashboardStatsGet));
+apiRouter.get("/api/dashboard/gifts", makeExpressHandler(dashboardGiftsGet));
+
+// 3. Gifts routes
+apiRouter.post("/api/gifts/redeem", makeExpressHandler(giftRedeemPost));
+apiRouter.post("/api/gifts/appreciate", makeExpressHandler(giftAppreciatePost));
+
+// 4. Upload routes
 apiRouter.post("/api/upload/image", limitUploadSize, makeExpressHandler(uploadImagePost));
 
-
+// 5. Users routes
+apiRouter.get("/api/users/resolve", makeExpressHandler(resolveRecipientGet));
