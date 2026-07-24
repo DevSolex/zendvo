@@ -188,22 +188,18 @@ fn test_gift_ids_are_sequential() {
     let id1 = f
         .client
         .create_gift(&f.sender, &f.recipient, &MIN_DEPOSIT_AMOUNT, &unlock_time);
-    let id2 = f
-        .client
-        .create_gift(
-            &f.sender,
-            &f.recipient,
-            &(MIN_DEPOSIT_AMOUNT + 10_000_000),
-            &unlock_time,
-        );
-    let id3 = f
-        .client
-        .create_gift(
-            &f.sender,
-            &f.recipient,
-            &(MIN_DEPOSIT_AMOUNT + 20_000_000),
-            &unlock_time,
-        );
+    let id2 = f.client.create_gift(
+        &f.sender,
+        &f.recipient,
+        &(MIN_DEPOSIT_AMOUNT + 10_000_000),
+        &unlock_time,
+    );
+    let id3 = f.client.create_gift(
+        &f.sender,
+        &f.recipient,
+        &(MIN_DEPOSIT_AMOUNT + 20_000_000),
+        &unlock_time,
+    );
 
     assert_eq!((id1, id2, id3), (1, 2, 3));
 }
@@ -218,7 +214,9 @@ fn test_cancel_gift_succeeds() {
     let ledger_now: u64 = f.env.ledger().timestamp();
     let unlock_time = ledger_now + 3600;
 
-    let gift_id = f.client.create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
+    let gift_id = f
+        .client
+        .create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
 
     // Check contract balance before cancel.
     let token_client = token::Client::new(&f.env, &f.token_id);
@@ -256,7 +254,9 @@ fn test_cancel_gift_unauthorized() {
 
     let ledger_now: u64 = f.env.ledger().timestamp();
     let unlock_time = ledger_now + 3600;
-    let gift_id = f.client.create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
+    let gift_id = f
+        .client
+        .create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
 
     let result = f.client.try_cancel_gift(&imposter, &gift_id);
     assert_eq!(
@@ -272,7 +272,9 @@ fn test_cancel_gift_already_claimed() {
 
     let ledger_now: u64 = f.env.ledger().timestamp();
     let unlock_time = ledger_now + 3600;
-    let gift_id = f.client.create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
+    let gift_id = f
+        .client
+        .create_gift(&f.sender, &f.recipient, &500_000, &unlock_time);
 
     // Manually mark the gift as claimed by writing storage inside the contract context.
     let claimed_gift = crate::gift::types::Gift {

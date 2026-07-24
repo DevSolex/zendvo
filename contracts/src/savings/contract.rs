@@ -1,10 +1,10 @@
 use soroban_sdk::{contract, contractimpl, token, Address, Env};
 
+use crate::savings::types::DataKey;
 use crate::{
     core::{errors::ContractError, utils::MIN_DEPOSIT_AMOUNT},
     savings::{events, storage},
 };
-use crate::savings::types::DataKey;
 
 #[contract]
 pub struct SavingsContract;

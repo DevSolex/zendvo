@@ -41,12 +41,7 @@ pub fn emit_gift_created(
 ///
 /// Topics : ["GiftCncld", sender]
 /// Data   : (gift_id, amount, timestamp)
-pub fn emit_gift_cancelled(
-    env: &Env,
-    gift_id: u64,
-    sender: &Address,
-    amount: i128,
-) {
+pub fn emit_gift_cancelled(env: &Env, gift_id: u64, sender: &Address, amount: i128) {
     let timestamp = env.ledger().timestamp();
     env.events().publish(
         (symbol_short!("GiftCncld"), sender.clone()),

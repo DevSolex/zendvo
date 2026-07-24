@@ -128,11 +128,7 @@ impl GiftContract {
     /// Only the original sender may cancel. The gift must not have been claimed
     /// yet. Upon success the gift record is removed from storage and the locked
     /// amount is transferred back to the sender.
-    pub fn cancel_gift(
-        env: Env,
-        sender: Address,
-        gift_id: u64,
-    ) -> Result<(), ContractError> {
+    pub fn cancel_gift(env: Env, sender: Address, gift_id: u64) -> Result<(), ContractError> {
         sender.require_auth();
 
         let gift: Gift = env
@@ -151,11 +147,7 @@ impl GiftContract {
 
         let token_address = get_token_address(&env);
         let token_client = token::Client::new(&env, &token_address);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &sender,
-            &gift.amount,
-        );
+        token_client.transfer(&env.current_contract_address(), &sender, &gift.amount);
 
         remove_gift(&env, gift_id);
 
@@ -198,12 +190,7 @@ impl GiftContract {
     /// # Panics
     /// - If the caller is not the original `sender`.
     /// - If the gift has already been claimed.
-    pub fn update_recipient(
-        env: Env,
-        sender: Address,
-        gift_id: u64,
-        new_recipient: Address,
-    ) {
+    pub fn update_recipient(env: Env, sender: Address, gift_id: u64, new_recipient: Address) {
         sender.require_auth();
 
         let mut gift = storage::get_gift(&env, gift_id);
@@ -220,12 +207,6 @@ impl GiftContract {
         gift.recipient = new_recipient.clone();
         storage::set_gift(&env, gift_id, &gift);
 
-        events::emit_recipient_updated(
-            &env,
-            gift_id,
-            &sender,
-            &old_recipient,
-            &new_recipient,
-        );
+        events::emit_recipient_updated(&env, gift_id, &sender, &old_recipient, &new_recipient);
     }
 }

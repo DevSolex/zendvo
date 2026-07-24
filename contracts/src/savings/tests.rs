@@ -388,7 +388,10 @@ fn test_withdraw_savings_preserves_yield_shares() {
             .get(&DataKey::UserSavingsRecord(f.user.clone()))
             .unwrap()
     });
-    assert_eq!(record.yield_shares, 500, "yield shares must remain untouched");
+    assert_eq!(
+        record.yield_shares, 500,
+        "yield shares must remain untouched"
+    );
     assert_eq!(record.principal, 7_000, "principal reduced by withdrawal");
 }
 
@@ -438,7 +441,10 @@ fn test_withdraw_savings_insufficient_balance_rollback() {
 
     // Attempt to withdraw — token transfer panics (insufficient balance)
     let result = client.try_withdraw_savings(&user, &5_000);
-    assert!(result.is_err(), "withdraw must fail when contract has no USDC");
+    assert!(
+        result.is_err(),
+        "withdraw must fail when contract has no USDC"
+    );
 
     // Verify atomic rollback: principal is unchanged
     let saved: UserSavings = env.as_contract(&contract_id, || {
@@ -477,7 +483,8 @@ fn test_withdraw_savings_zero_amount_succeeds() {
             .get(&DataKey::UserSavingsRecord(f.user.clone()))
             .unwrap()
     });
-    assert_eq!(record.principal, 10_000, "principal unchanged when withdrawing 0");
+    assert_eq!(
+        record.principal, 10_000,
+        "principal unchanged when withdrawing 0"
+    );
 }
-
-
