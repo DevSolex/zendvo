@@ -2,6 +2,7 @@
   "name": "zendvo-monorepo",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/patch-jest-mock.js",
     "dev:web": "pnpm --filter web run dev",
     "dev:backend": "pnpm --filter backend run dev",
     "dev": "concurrently \"pnpm run dev:web\" \"pnpm run dev:backend\"",
@@ -14,11 +15,6 @@
     "db:migrate": "pnpm --filter backend run db:migrate",
     "db:push": "pnpm --filter backend run db:push",
     "db:check": "pnpm --filter backend run db:check"
-  },
-  "pnpm": {
-    "overrides": {
-      "jest-mock": "^30.0.0"
-    }
   },
   "devDependencies": {
     "@types/node-cron": "^3.0.11",
