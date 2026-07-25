@@ -7,8 +7,7 @@ import { createProblemDetails } from "@/lib/api-utils";
 import { getAuthPayload } from "@/lib/auth-session";
 import { sendSecurityAlertEmail } from "@/server/services/emailService";
 import { validateEmail, sanitizeInput } from "@/lib/validation";
-import { logAuditEvent } from "@/server/services/auditService";
-import { AuditEventType } from "@/server/services/auditService";
+import { logAuditEvent, AuditEventType } from "@/server/services/auditService";
 import crypto from "crypto";
 
 const ACTION_TOKEN_EXPIRY_MS = 5 * 60 * 1000;
@@ -43,15 +42,35 @@ export async function POST(request: NextRequest) {
 
     const { userId } = authPayload;
 
-    const body = await request.json();
-    const { email, otp } = body;
-
-    if (!email || !otp) {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
       return createProblemDetails(
         "about:blank",
         "Bad Request",
         400,
-        "Email and OTP are required"
+        "Invalid or missing request body"
+      );
+    }
+
+    if (!body || typeof body !== "object") {
+      return createProblemDetails(
+        "about:blank",
+        "Bad Request",
+        400,
+        "Request body must be a JSON object"
+      );
+    }
+
+    const { email, otp } = body as Record<string, unknown>;
+
+    if (typeof email !== "string" || typeof otp !== "string") {
+      return createProblemDetails(
+        "about:blank",
+        "Bad Request",
+        400,
+        "Email and OTP are required and must be strings"
       );
     }
 
@@ -88,7 +107,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (user.email !== sanitizedEmail) {
+    if (user.email.toLowerCase() !== sanitizedEmail.toLowerCase()) {
       return createProblemDetails(
         "about:blank",
         "Forbidden",

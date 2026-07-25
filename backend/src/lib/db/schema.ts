@@ -17,6 +17,7 @@ export const userStatusEnum = pgEnum("user_status", [
   "unverified",
   "active",
   "suspended",
+  "deleted",
 ]);
 
 export const users = pgTable(

@@ -9,10 +9,9 @@ import {
   wallets,
   notifications,
   bankAccounts,
-  transactions,
 } from "@/lib/db/schema";
 import { eq, and, or, isNull } from "drizzle-orm";
-import { buildSorobanCancelGiftTx } from "@/lib/soroban";
+import { buildSorobanCancelGiftTx, SorobanTxError } from "@/lib/soroban";
 import {
   AuditEventType,
   logAuditEvent,
@@ -57,6 +56,18 @@ export async function deleteAccount(
       };
     }
 
+    if (user.status === "deleted") {
+      return {
+        success: false,
+        message: "Account has already been deleted.",
+        giftsResolved: 0,
+        giftsCancelled: 0,
+        tokensRevoked: 0,
+        error: "ALREADY_DELETED",
+        detail: "ALREADY_DELETED",
+      };
+    }
+
     if (user.status === "suspended") {
       return {
         success: false,
@@ -96,12 +107,83 @@ export async function deleteAccount(
     let giftsCancelled = 0;
     const blockchainResults: Array<{
       giftId: string;
+      direction: "sent" | "received";
       txHash?: string;
       success: boolean;
       error?: string;
     }> = [];
 
     for (const gift of unclaimedSentGifts) {
+      try {
+        if (!gift.senderId) {
+          await db
+            .update(gifts)
+            .set({ status: "failed", updatedAt: now })
+            .where(eq(gifts.id, gift.id));
+          giftsCancelled++;
+          blockchainResults.push({
+            giftId: gift.id,
+            direction: "sent",
+            success: true,
+          });
+          continue;
+        }
+
+        const sorobanResult = buildSorobanCancelGiftTx({
+          giftId: gift.id,
+          senderAddress: gift.senderId,
+        });
+
+        await db
+          .update(gifts)
+          .set({
+            status: "failed",
+            updatedAt: now,
+            blockchainTxHash: sorobanResult.txHash || gift.blockchainTxHash,
+          })
+          .where(eq(gifts.id, gift.id));
+
+        giftsCancelled++;
+        blockchainResults.push({
+          giftId: gift.id,
+          direction: "sent",
+          txHash: sorobanResult.txHash,
+          success: true,
+        });
+
+        logAuditEvent({
+          timestamp: now,
+          eventType: AuditEventType.GIFT_CANCELLED_FOR_DELETION,
+          userId,
+          metadata: {
+            giftId: gift.id,
+            amount: gift.amount,
+            currency: gift.currency,
+            direction: "sent",
+            blockchainTxHash: sorobanResult.txHash,
+          },
+          message: `Gift ${gift.id} cancelled due to account deletion (sender)`,
+        });
+      } catch (error) {
+        console.error(
+          `[ACCOUNT_DELETION] Failed to cancel sent gift ${gift.id}:`,
+          error
+        );
+        const errorMsg = error instanceof SorobanTxError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Unknown error";
+        blockchainResults.push({
+          giftId: gift.id,
+          direction: "sent",
+          success: false,
+          error: errorMsg,
+        });
+      }
+    }
+
+    for (const gift of unclaimedReceivedGifts) {
       try {
         if (gift.senderId) {
           const sorobanResult = buildSorobanCancelGiftTx({
@@ -118,8 +200,10 @@ export async function deleteAccount(
             })
             .where(eq(gifts.id, gift.id));
 
+          giftsCancelled++;
           blockchainResults.push({
             giftId: gift.id,
+            direction: "received",
             txHash: sorobanResult.txHash,
             success: true,
           });
@@ -132,126 +216,127 @@ export async function deleteAccount(
               giftId: gift.id,
               amount: gift.amount,
               currency: gift.currency,
-              direction: "sent",
+              direction: "received",
+              senderId: gift.senderId,
               blockchainTxHash: sorobanResult.txHash,
             },
-            message: `Gift ${gift.id} cancelled due to account deletion (sender)`,
+            message: `Gift ${gift.id} refunded to sender due to recipient account deletion`,
+          });
+        } else {
+          await db
+            .update(gifts)
+            .set({ status: "failed", updatedAt: now })
+            .where(eq(gifts.id, gift.id));
+
+          giftsCancelled++;
+          blockchainResults.push({
+            giftId: gift.id,
+            direction: "received",
+            success: true,
+          });
+
+          logAuditEvent({
+            timestamp: now,
+            eventType: AuditEventType.GIFT_CANCELLED_FOR_DELETION,
+            userId,
+            metadata: {
+              giftId: gift.id,
+              amount: gift.amount,
+              currency: gift.currency,
+              direction: "received",
+              note: "No sender on record; funds burned",
+            },
+            message: `Gift ${gift.id} marked failed (no sender to refund)`,
           });
         }
-      } catch (error) {
-        console.error(
-          `[ACCOUNT_DELETION] Failed to cancel sent gift ${gift.id}:`,
-          error
-        );
-        blockchainResults.push({
-          giftId: gift.id,
-          success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    }
-
-    for (const gift of unclaimedReceivedGifts) {
-      try {
-        await db
-          .update(gifts)
-          .set({
-            status: "failed",
-            updatedAt: now,
-          })
-          .where(eq(gifts.id, gift.id));
-
-        giftsCancelled++;
-
-        logAuditEvent({
-          timestamp: now,
-          eventType: AuditEventType.GIFT_CANCELLED_FOR_DELETION,
-          userId,
-          metadata: {
-            giftId: gift.id,
-            amount: gift.amount,
-            currency: gift.currency,
-            direction: "received",
-          },
-          message: `Gift ${gift.id} cancelled due to account deletion (recipient)`,
-        });
       } catch (error) {
         console.error(
           `[ACCOUNT_DELETION] Failed to cancel received gift ${gift.id}:`,
           error
         );
+        const errorMsg = error instanceof SorobanTxError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Unknown error";
+        blockchainResults.push({
+          giftId: gift.id,
+          direction: "received",
+          success: false,
+          error: errorMsg,
+        });
       }
     }
 
-    giftsCancelled = blockchainResults.filter((r) => r.success).length +
-      unclaimedReceivedGifts.length;
-
-    const revokedTokens = await db
-      .update(refreshTokens)
-      .set({ revokedAt: now })
-      .where(
-        and(
-          eq(refreshTokens.userId, userId),
-          isNull(refreshTokens.revokedAt)
+    const result = await db.transaction(async (tx) => {
+      const revokedTokens = await tx
+        .update(refreshTokens)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(refreshTokens.userId, userId),
+            isNull(refreshTokens.revokedAt)
+          )
         )
-      )
-      .returning();
+        .returning();
 
-    await db
-      .update(actionTokens)
-      .set({ revokedAt: now })
-      .where(
-        and(
-          eq(actionTokens.userId, userId),
-          isNull(actionTokens.revokedAt)
-        )
-      );
+      await tx
+        .update(actionTokens)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(actionTokens.userId, userId),
+            isNull(actionTokens.revokedAt)
+          )
+        );
 
-    await db
-      .delete(emailVerifications)
-      .where(eq(emailVerifications.userId, userId));
+      await tx
+        .delete(emailVerifications)
+        .where(eq(emailVerifications.userId, userId));
 
-    await db
-      .delete(passwordResets)
-      .where(eq(passwordResets.userId, userId));
+      await tx
+        .delete(passwordResets)
+        .where(eq(passwordResets.userId, userId));
 
-    const anonymizedEmail = `deleted_${userId}@deleted.invalid`;
-    const anonymizedPhone = null;
+      const anonymizedEmail = `deleted_${userId}@deleted.invalid`;
 
-    await db
-      .update(users)
-      .set({
-        email: anonymizedEmail,
-        passwordHash: "DELETED",
-        name: "Deleted User",
-        phoneNumber: anonymizedPhone,
-        username: null,
-        avatarUrl: null,
-        phoneLast4: null,
-        status: "suspended",
-        role: "user",
-        loginAttempts: 0,
-        lockUntil: null,
-        otpFailedAttempts: 0,
-        otpAttemptsWindowStart: null,
-        lastLogin: null,
-        lastOtpSentAt: null,
-        isPhoneVerified: false,
-        updatedAt: now,
-      })
-      .where(eq(users.id, userId));
+      await tx
+        .update(users)
+        .set({
+          email: anonymizedEmail,
+          passwordHash: "DELETED",
+          name: "Deleted User",
+          phoneNumber: null,
+          username: null,
+          avatarUrl: null,
+          phoneLast4: null,
+          status: "deleted",
+          role: "user",
+          loginAttempts: 0,
+          lockUntil: null,
+          otpFailedAttempts: 0,
+          otpAttemptsWindowStart: null,
+          lastLogin: null,
+          lastOtpSentAt: null,
+          isPhoneVerified: false,
+          updatedAt: now,
+        })
+        .where(eq(users.id, userId));
 
-    await db
-      .delete(wallets)
-      .where(eq(wallets.userId, userId));
+      await tx
+        .delete(wallets)
+        .where(eq(wallets.userId, userId));
 
-    await db
-      .delete(notifications)
-      .where(eq(notifications.userId, userId));
+      await tx
+        .delete(notifications)
+        .where(eq(notifications.userId, userId));
 
-    await db
-      .delete(bankAccounts)
-      .where(eq(bankAccounts.userId, userId));
+      await tx
+        .delete(bankAccounts)
+        .where(eq(bankAccounts.userId, userId));
+
+      return { tokensRevoked: revokedTokens.length };
+    });
 
     logAuditEvent({
       timestamp: now,
@@ -260,7 +345,7 @@ export async function deleteAccount(
       metadata: {
         giftsResolved: allUnclaimedGifts.length,
         giftsCancelled,
-        tokensRevoked: revokedTokens.length,
+        tokensRevoked: result.tokensRevoked,
         blockchainResults,
       },
       message: `Account ${userId} successfully deleted`,
@@ -271,7 +356,7 @@ export async function deleteAccount(
       message: "Account successfully deleted",
       giftsResolved: allUnclaimedGifts.length,
       giftsCancelled,
-      tokensRevoked: revokedTokens.length,
+      tokensRevoked: result.tokensRevoked,
     };
   } catch (error) {
     console.error("[ACCOUNT_DELETION_ERROR]", error);

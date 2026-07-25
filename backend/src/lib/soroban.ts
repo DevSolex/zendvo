@@ -6,6 +6,17 @@ export interface SorobanTxResult {
   unsignedXdr?: string;
 }
 
+export class SorobanTxError extends Error {
+  constructor(
+    message: string,
+    public readonly contractId?: string,
+    public readonly cause?: Error,
+  ) {
+    super(message);
+    this.name = "SorobanTxError";
+  }
+}
+
 export function buildSorobanRedeemTx(options: {
   contractId?: string;
   giftId: string | number;
@@ -51,27 +62,39 @@ export function buildSorobanCancelGiftTx(options: {
     senderAddress,
   } = options;
 
-  try {
-    const numericId = typeof giftId === "string" ? parseInt(giftId, 10) : giftId;
-
-    if (contractId && senderAddress) {
-      const contract = new Contract(contractId);
-      const operation = contract.call(
-        "cancel_gift",
-        Address.fromString(senderAddress).toScVal(),
-      );
-      return {
-        contractId,
-        txHash: `tx_soroban_cancel_${numericId}_${Date.now()}`,
-        unsignedXdr: "AAAA...",
-      };
-    }
-  } catch (error) {
-    console.warn("[SOROBAN_HELPER] Soroban cancel_gift builder warning:", error);
+  if (!senderAddress) {
+    throw new SorobanTxError(
+      "senderAddress is required to build cancel_gift transaction",
+      contractId,
+    );
   }
 
-  return {
-    contractId,
-    txHash: `tx_soroban_cancel_${giftId}_${Date.now()}`,
-  };
+  const numericId = typeof giftId === "string" ? parseInt(giftId, 10) : giftId;
+
+  if (isNaN(numericId)) {
+    throw new SorobanTxError(
+      `Invalid giftId: ${giftId}`,
+      contractId,
+    );
+  }
+
+  try {
+    const contract = new Contract(contractId);
+    const operation = contract.call(
+      "cancel_gift",
+      Address.fromString(senderAddress).toScVal(),
+    );
+    return {
+      contractId,
+      txHash: `tx_soroban_cancel_${numericId}_${Date.now()}`,
+      unsignedXdr: "AAAA...",
+    };
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    throw new SorobanTxError(
+      `Failed to build cancel_gift transaction for gift ${giftId}: ${err.message}`,
+      contractId,
+      err,
+    );
+  }
 }
