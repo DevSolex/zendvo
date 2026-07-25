@@ -256,43 +256,66 @@ export async function storeOTP(userId: string, otp: string, action?: string) {
   const storedValue = `${salt}:${hash}`;
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-  // Wrap in a SERIALIZABLE transaction so that concurrent calls for the
-  // same (userId, action) pair cannot both observe zero active rows and each
-  // insert a second unused OTP.  The serializable isolation level causes one
-  // of the concurrent transactions to abort with a serialization failure, at
-  // which point the caller can retry (the rate-limiter already caps retries).
-  const newVerification = await db.transaction(
-    async (tx) => {
-      // Invalidate existing unused OTPs scoped to the same action.
-      await tx
-        .update(emailVerifications)
-        .set({ isUsed: true })
-        .where(
-          and(
-            eq(emailVerifications.userId, userId),
-            eq(emailVerifications.isUsed, false),
-            action
-              ? eq(emailVerifications.action, action)
-              : sql`${emailVerifications.action} IS NULL`,
-          ),
-        );
+  // PostgreSQL error code for serialization failure (40001) and deadlock (40P01).
+  // Either can be raised when two SERIALIZABLE transactions conflict on the same
+  // rows.  Both are safe to retry immediately from the application layer.
+  const SERIALIZATION_FAILURE = "40001";
+  const DEADLOCK_DETECTED = "40P01";
+  const MAX_RETRIES = 3;
 
-      const [inserted] = await tx
-        .insert(emailVerifications)
-        .values({
-          userId,
-          otpHash: storedValue,
-          expiresAt,
-          attempts: 0,
-          isUsed: false,
-          action: action ?? null,
-        })
-        .returning();
+  let attempt = 0;
+  let newVerification: typeof import("@/lib/db/schema").emailVerifications.$inferSelect | undefined;
 
-      return inserted;
-    },
-    { isolationLevel: "serializable" },
-  );
+  while (attempt < MAX_RETRIES) {
+    try {
+      newVerification = await db.transaction(
+        async (tx) => {
+          // Invalidate existing unused OTPs scoped to the same action.
+          await tx
+            .update(emailVerifications)
+            .set({ isUsed: true })
+            .where(
+              and(
+                eq(emailVerifications.userId, userId),
+                eq(emailVerifications.isUsed, false),
+                action
+                  ? eq(emailVerifications.action, action)
+                  : sql`${emailVerifications.action} IS NULL`,
+              ),
+            );
+
+          const [inserted] = await tx
+            .insert(emailVerifications)
+            .values({
+              userId,
+              otpHash: storedValue,
+              expiresAt,
+              attempts: 0,
+              isUsed: false,
+              action: action ?? null,
+            })
+            .returning();
+
+          return inserted;
+        },
+        { isolationLevel: "serializable" },
+      );
+
+      // Transaction committed — exit the retry loop.
+      break;
+    } catch (err) {
+      const pgCode = (err as { code?: string }).code;
+      if (
+        (pgCode === SERIALIZATION_FAILURE || pgCode === DEADLOCK_DETECTED) &&
+        attempt < MAX_RETRIES - 1
+      ) {
+        attempt++;
+        continue;
+      }
+      // Propagate non-retryable errors or exhausted retries.
+      throw err;
+    }
+  }
 
   logOTPEvent(AuditEventType.OTP_GENERATED, userId);
 
@@ -301,7 +324,7 @@ export async function storeOTP(userId: string, otp: string, action?: string) {
     .set({ lastOtpSentAt: new Date() })
     .where(eq(users.id, userId));
 
-  return newVerification;
+  return newVerification!;
 }
 
 export async function verifyOTP(userId: string, otp: string, ipAddress?: string) {
