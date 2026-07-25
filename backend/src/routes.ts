@@ -49,6 +49,7 @@ import { POST as giftRedeemPost } from "./api/gifts/redeem/route";
 import { POST as giftAppreciatePost } from "./api/gifts/appreciate/route";
 // Users
 import { GET as resolveRecipientGet } from "./api/users/resolve/route";
+import { DELETE as deleteAccountDelete } from "./api/users/account/route";
 import { POST as forgotPasswordPost } from "./api/auth/forgot-password/route";
 import { POST as loginPost } from "./api/auth/login/route";
 import { POST as logoutPost } from "./api/auth/logout/route";
@@ -64,6 +65,7 @@ import { POST as sendPhoneOtpPost } from "./api/auth/send-phone-otp/route";
 import { POST as sendVerificationPost } from "./api/auth/send-verification/route";
 import { POST as verifyEmailPost } from "./api/auth/verify-email/route";
 import { POST as verifyOtpPost } from "./api/auth/verify-otp/route";
+import { POST as verifyDeletionOtpPost } from "./api/auth/verify-deletion-otp/route";
 
 // Upload
 import { POST as uploadImagePost } from "./api/upload/image/route";
@@ -87,6 +89,7 @@ apiRouter.post("/api/auth/send-phone-otp", makeExpressHandler(sendPhoneOtpPost))
 apiRouter.post("/api/auth/send-verification", makeExpressHandler(sendVerificationPost));
 apiRouter.post("/api/auth/verify-email", makeExpressHandler(verifyEmailPost));
 apiRouter.post("/api/auth/verify-otp", makeExpressHandler(verifyOtpPost));
+apiRouter.post("/api/auth/verify-deletion-otp", makeExpressHandler(verifyDeletionOtpPost));
 
 // 2. Dashboard routes
 apiRouter.get("/api/dashboard/stats", makeExpressHandler(dashboardStatsGet));
@@ -101,3 +104,4 @@ apiRouter.post("/api/upload/image", limitUploadSize, makeExpressHandler(uploadIm
 
 // 5. Users routes
 apiRouter.get("/api/users/resolve", makeExpressHandler(resolveRecipientGet));
+apiRouter.delete("/api/users/account", makeExpressHandler(deleteAccountDelete));
