@@ -17,8 +17,8 @@ export const userStatusEnum = pgEnum("user_status", [
   "unverified",
   "active",
   "suspended",
+  "deleted",
 ]);
-
 
 export const users = pgTable(
   "users",
@@ -263,6 +263,27 @@ export const transactions = pgTable(
   ],
 );
 
+export const actionTokens = pgTable(
+  "action_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    token: text("token").notNull().unique(),
+    action: text("action").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    usedAt: timestamp("used_at"),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (table) => [
+    index("at_user_id_idx").on(table.userId),
+    index("at_token_idx").on(table.token),
+    index("at_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
 export const webhookRetryQueue = pgTable("WebhookRetryQueue", {
   id: uuid("id").defaultRandom().primaryKey(),
   eventType: text("event_type").notNull(),
@@ -279,6 +300,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   emailVerifications: many(emailVerifications),
   passwordResets: many(passwordResets),
   refreshTokens: many(refreshTokens),
+  actionTokens: many(actionTokens),
   wallets: many(wallets),
   notifications: many(notifications),
   sentGifts: many(gifts, { relationName: "sentGifts" }),
@@ -307,6 +329,13 @@ export const passwordResetsRelations = relations(passwordResets, ({ one }) => ({
 export const refreshTokensRelations = relations(refreshTokens, ({ one }) => ({
   user: one(users, {
     fields: [refreshTokens.userId],
+    references: [users.id],
+  }),
+}));
+
+export const actionTokensRelations = relations(actionTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [actionTokens.userId],
     references: [users.id],
   }),
 }));
@@ -341,3 +370,5 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   user: one(users, { fields: [transactions.userId], references: [users.id] }),
   wallet: one(wallets, { fields: [transactions.walletId], references: [wallets.id] }),
 }));
+
+export const webhookRetryQueueRelations = relations(webhookRetryQueue, () => ({}));
